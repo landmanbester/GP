@@ -188,14 +188,17 @@ class RR_2DGP(Class2DGP.Class2DGP):
             Phip[j] = self.eigenfuncs(j, 1.0)
         return np.sum(Phip*coeffs)
 
-    def RR_covf(self, theta):
-        S = self.dspectral_density(theta)
+    def RR_covf(self, theta, return_covf=True):
+        S = self.spectral_density(theta)
         Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / S)
         L = np.linalg.cholesky(Z)
         Linv = np.linalg.inv(L)
         fcovcoeffs = theta[2] ** 2 * np.dot(Linv.T, Linv)
-        covf = theta[2] ** 2 * np.dot(self.Phip, np.dot(Linv.T, np.dot(Linv, self.Phip.T)))
-        return covf, fcovcoeffs
+        if return_covf:
+            covf = theta[2] ** 2 * np.dot(self.Phip, np.dot(Linv.T, np.dot(Linv, self.Phip.T)))
+            return covf, fcovcoeffs
+        else:
+            return fcovcoeffs
 
     def RR_trainGP(self, theta0, y):
         # Do optimisation
