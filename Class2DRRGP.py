@@ -63,7 +63,7 @@ class RR_2DGP(Class2DGP.Class2DGP):
 
         # Set bounds for hypers (they must be strictly positive)
         #lmin = self.L/(2*self.m) + 1e-5
-        self.bnds = ((1e-5, 1.0e2), (1e-5, None), (1.0e-4, None))
+        self.bnds = ((1e-5, 1.0e2), (1e-5, 0.9*self.L), (1.0e-4, None))
 
     def set_spectral_density(self, covariance_function='sqexp'):
         if covariance_function == "sqexp":
@@ -116,6 +116,7 @@ class RR_2DGP(Class2DGP.Class2DGP):
 
     def RR_logp_and_gradlogp_conv(self, theta, y):
         S = self.spectral_density(theta)
+        #print S
         Lambdainv = np.diag(1.0 / S)
         Z = self.PhiTPhiconv + theta[2] ** 2 * Lambdainv
         try:
@@ -280,14 +281,16 @@ class RR_2DGP(Class2DGP.Class2DGP):
         LL = np.tile(L, (1, self.D)).squeeze()
         Np = xx.shape[0]
         xy = np.vstack((xx.flatten(), yy.flatten()))
-        self.Phiconv = np.zeros([(2*Np - 1)**2, self.m**2])
+        #self.Phiconv = np.zeros([(2*Np - 1)**2, self.m**2])
         self.Phiconv0 = np.zeros([Np ** 2, self.m ** 2])
         for i in xrange(self.m**2):
             tmp = self.eigenfuncs(j[i], xy, LL)
-            tmp2 = fftconvolve(tmp.reshape(Np,Np), PSF)
-            self.Phiconv[:, i] = tmp2.flatten()
-            self.Phiconv0[:, i] = tmp2[(Np-1)//2:3*Np//2, (Np-1)//2:3*Np//2].flatten()
-        self.PhiTPhiconv = np.dot(self.Phiconv.T, self.Phiconv)
+            #tmp2 = fftconvolve(tmp.reshape(Np,Np), PSF)
+            #self.Phiconv[:, i] = tmp2.flatten()
+            #self.Phiconv0[:, i] = tmp2[(Np-1)//2:3*Np//2, (Np-1)//2:3*Np//2].flatten()
+            self.Phiconv0[:, i] = fftconvolve(tmp.reshape(Np, Np), PSF, mode='same').flatten()
+        #self.PhiTPhiconv = np.dot(self.Phiconv.T, self.Phiconv)
+        self.PhiTPhiconv = np.dot(self.Phiconv0.T, self.Phiconv0)
 
     def RR_From_Coeffs(self, coeffs):
         return np.dot(self.Phip, coeffs)
