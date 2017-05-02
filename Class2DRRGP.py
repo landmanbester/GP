@@ -152,6 +152,44 @@ class RR_2DGP(Class2DGP.Class2DGP):
         dlogp = (dlogQdtheta + dyTQinvydtheta)/2
         return logp, dlogp
 
+    def RR_logp_and_gradlogp_conv_MEM(self, theta, y):
+        S = self.spectral_density(theta)
+        Lambdainv = np.diag(1.0 / S)
+        Z = self.PhiTPhiconv + theta[2] ** 2 * Lambdainv
+        try:
+            L = np.linalg.cholesky(Z)
+        except:
+            print "Had to add jitter, theta = ", theta
+            L = np.linalg.cholesky(Z + 1.0e-6)
+            #
+            # logp = 1.0e2
+            # dlogp = np.ones(theta.size)*1.0e8
+            # return logp, dlogp
+        Linv = np.linalg.inv(L)
+        Zinv = np.dot(Linv.T,Linv)
+        logdetZ = 2.0 * np.sum(np.log(np.diag(L)))
+        # Get the log term
+        logQ = (self.N - self.m**2) * np.log(theta[2] ** 2) + logdetZ + np.sum(np.log(S))
+        # Get the quadratic term
+        PhiTy = np.dot(self.Phiconv0.T, y)
+        ZinvPhiTy = np.dot(Zinv, PhiTy)
+        yTy = np.dot(y.T, y)
+        yTQinvy = (yTy - np.dot(PhiTy.T, ZinvPhiTy)) / theta[2] ** 2
+        # Get their derivatives
+        dlogQdtheta = np.zeros(theta.size)
+        dyTQinvydtheta = np.zeros(theta.size)
+        for i in xrange(theta.size-1):
+            dSdtheta = self.dspectral_density(theta, S, mode=i)
+            dlogQdtheta[i] = np.sum(dSdtheta/S) - theta[2]**2*np.sum(dSdtheta/S*np.diag(Zinv)/S)
+            dyTQinvydtheta[i] = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta/S **2), ZinvPhiTy))
+        # Get derivatives w.r.t. sigma_n
+        dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.m**2) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))
+        dyTQinvydtheta[2] = 2 * (np.dot(ZinvPhiTy.T, np.dot(Lambdainv,ZinvPhiTy)) - yTQinvy)/theta[2]
+
+        logp = yTQinvy/2.0 # (yTQinvy + logQ + self.N * np.log(2 * np.pi)) / 2.0
+        dlogp = dyTQinvydtheta/2.0 # (dlogQdtheta + dyTQinvydtheta)/2
+        return logp, dlogp
+
     def eigenvals(self, j, L):
         return np.sum((np.pi*j/(2.0*L))**2)
 
@@ -320,6 +358,29 @@ class RR_2DGP(Class2DGP.Class2DGP):
             # print thetap[0]
         # Return optimised value of theta
         return thetap[0]
+
+    def RR_trainGP_conv_MEM(self, theta0, y):
+        # Do optimisation
+        self.SolverFlag = 0
+        thetap = opt.fmin_l_bfgs_b(self.RR_logp_and_gradlogp_conv_MEM, theta0, fprime=None, args=(y,),
+                                   bounds=self.bnds)  # , factr=1e10, pgtol=0.1)
+
+        if np.any(np.isnan(thetap[0])):
+            raise Exception(
+                'Solver crashed error.')
+
+        # Check for convergence
+        if thetap[2]["warnflag"]:
+            self.SolverFlag = 1
+            # print "Warning flag raised", thetap[2]
+            # print thetap[0]
+        # Return optimised value of theta
+        return thetap[0]
+
+    def RR_EvalGP_conv_MEM(self, theta0, y):
+        theta = self.RR_trainGP_conv_MEM(theta0, y)
+        coeffs = self.RR_Give_Coeffs_conv(theta, y)
+        return coeffs, theta
 
     def RR_EvalGP_conv(self, theta0, y):
         theta = self.RR_trainGP_conv(theta0, y)
