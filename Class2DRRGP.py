@@ -153,8 +153,9 @@ class RR_2DGP(Class2DGP.Class2DGP):
         dlogp = (dlogQdtheta + dyTQinvydtheta)/2
         return logp, dlogp
 
-    def RR_logp_and_gradlogp_conv_MEM(self, theta, y):
+    def RR_logp_and_gradlogp_conv_MEM(self, theta, y, lam):
         S = self.spectral_density(theta)
+        #print S
         Lambdainv = np.diag(1.0 / S)
         Z = self.PhiTPhiconv + theta[2] ** 2 * Lambdainv
         try:
@@ -187,8 +188,8 @@ class RR_2DGP(Class2DGP.Class2DGP):
         dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.m**2) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))
         dyTQinvydtheta[2] = 2 * (np.dot(ZinvPhiTy.T, np.dot(Lambdainv,ZinvPhiTy)) - yTQinvy)/theta[2]
 
-        logp = yTQinvy/2.0 # (yTQinvy + logQ + self.N * np.log(2 * np.pi)) / 2.0
-        dlogp = dyTQinvydtheta/2.0 # (dlogQdtheta + dyTQinvydtheta)/2
+        logp = (yTQinvy + (1.0 - lam)*logQ + (1.0 - lam)*self.N * np.log(2 * np.pi) + (1.0 - lam)*self.N) / 2.0
+        dlogp = ((1.0 - lam)*dlogQdtheta + dyTQinvydtheta)/2.0
         return logp, dlogp
 
     def eigenvals(self, j, L):
@@ -362,10 +363,10 @@ class RR_2DGP(Class2DGP.Class2DGP):
         # Return optimised value of theta
         return thetap[0]
 
-    def RR_trainGP_conv_MEM(self, theta0, y):
+    def RR_trainGP_conv_MEM(self, theta0, y, lam=0.0):
         # Do optimisation
         self.SolverFlag = 0
-        thetap = opt.fmin_l_bfgs_b(self.RR_logp_and_gradlogp_conv_MEM, theta0, fprime=None, args=(y,),
+        thetap = opt.fmin_l_bfgs_b(self.RR_logp_and_gradlogp_conv_MEM, theta0, fprime=None, args=(y,lam),
                                    bounds=self.bnds)  # , factr=1e10, pgtol=0.1)
 
         if np.any(np.isnan(thetap[0])):
@@ -380,8 +381,8 @@ class RR_2DGP(Class2DGP.Class2DGP):
         # Return optimised value of theta
         return thetap[0]
 
-    def RR_EvalGP_conv_MEM(self, theta0, y):
-        theta = self.RR_trainGP_conv_MEM(theta0, y)
+    def RR_EvalGP_conv_MEM(self, theta0, y, lam=0.0):
+        theta = self.RR_trainGP_conv_MEM(theta0, y, lam=lam)
         coeffs = self.RR_Give_Coeffs_conv(theta, y)
         return coeffs, theta
 
