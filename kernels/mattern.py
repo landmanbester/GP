@@ -7,7 +7,7 @@ from scipy.special import gamma
 from scipy.misc import factorial
 
 class mattern(object):
-    def __init__(self, p, D):
+    def __init__(self, p=3, D=1):
         # Check that p is an integer
         if not isinstance(p, (int, long)):
             print "Converting p to integer"
