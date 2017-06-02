@@ -2,19 +2,13 @@
 """
 
 First attempt at constructing a spatio temporal GP with 2D spatial sections and a time axis
-Here we are assuming each spatial slice has the same coordinates
+Here we are assuming each spatial slice has the same coordinates which allows efficient evaluation using 
+the kronecker product.
 
 """
 
 import numpy as np
 from scipy import optimize as opt
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-
 
 class STGP(object):
 	def __init__(self, t, x, tp, xp):
