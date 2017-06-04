@@ -7,8 +7,8 @@ TODO: Generalise for arbitrary targets?
 import numpy as np
 
 class meanf(object):
-    def __init__(self, x, xp, y, kernel, mode="Full", prior_mean=None, XX=None, XXp=None, Phi=None, Phip=None, s=None,
-                 grid="Regular"):
+    def __init__(self, x, xp, y, kernel, mode="Full", prior_mean=None, XX=None, XXp=None, Phi=None, Phip=None, \
+                 PhiTPhi = None, s=None, grid_regular=False):
         """
         :param x: inputs
         :param xp: targets
@@ -20,8 +20,9 @@ class meanf(object):
         :param XXp: absolute differences between targets and inputs 
         :param Phi: basis functions evaluated at x
         :param Phip: basis functions evaluated at xp
+        :param PhiTPhi: the product dot(Phi.T, Phi)
         :param s: square root of eigenvalues
-        :param grid: whether x is on a regular grid or not
+        :param grid_regular: whether x is on a regular grid or not
         """
         self.x = x
         self.xp = xp
@@ -34,16 +35,13 @@ class meanf(object):
             self.yp = prior_mean(x)
             self.fp = prior_mean(xp)
         self.yDat = y - self.yp
-        if self.mode=="Full":
+        if self.mode == "Full":
             self.XX = XX
             self.XXp = XXp
-        elif self.mode=="RR":
-            self.grid = grid
+        elif self.mode == "RR":
+            self.grid_regular = grid_regular
             self.Phi = Phi
-            if self.grid=="Regular": # save only the diagonal if on regular grid
-                self.PhiTPhi = np.diag(np.dot(Phi.T, Phi))
-            else:
-                self.PhiTPhi = np.dot(Phi.T, Phi)
+            self.PhiTPhi = PhiTPhi
             self.Phip = Phip
             self.s = s
 
@@ -63,6 +61,8 @@ class meanf(object):
         elif self.mode == "RR":
             fcoeffs = self.give_RR_coeffs(theta)
             return self.fp + np.dot(self.Phip, fcoeffs)
+        else:
+            raise Exception('Mode %s not supported yet'%self.mode)
 
     def give_RR_coeffs(self, theta):
         """
@@ -71,7 +71,7 @@ class meanf(object):
         :return fcoeffs: the coefficients of the posterior mean function
         """
         S = self.kernel.spectral_density(theta, self.s)
-        if self.grid == "Regular":  # if on a regular grid PhiTPhi (and therefore Z) is diagonal
+        if self.grid_regular:  # if on a regular grid PhiTPhi (and therefore Z) is diagonal
             Z = self.PhiTPhi + theta[2] ** 2 / S
             L = np.sqrt(Z)
             Linv = np.diag(1.0 / L)

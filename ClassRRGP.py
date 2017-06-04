@@ -168,7 +168,7 @@ class RR_GP(ClassGP.ClassGP):
         return np.sum(Phip*coeffs)
 
     def RR_covf(self, theta):
-        S = self.dspectral_density(theta)
+        S = self.spectral_density(theta)
         Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / S)
         L = np.linalg.cholesky(Z)
         Linv = np.linalg.inv(L)
