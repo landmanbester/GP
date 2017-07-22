@@ -38,8 +38,8 @@ class mattern(object):
         :param noise: whether to add noise or not
         """
         tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
-        K = theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*np.sum(self.factorial_arr*tmp,
-                                                                               axis=1).reshape(x.shape)
+        K = (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*np.sum(self.factorial_arr*tmp,
+                                                                               axis=1)).reshape(x.shape)
         if noise:
             return K + theta[2] ** 2.0 * np.eye(x.shape[0])
         else:
@@ -58,8 +58,8 @@ class mattern(object):
             return 2 * K / theta[0]
         elif mode == 1:
             tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
-            return self.root2v*x*K/theta[1]**2 + theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*\
-                        np.sum(-self.factorial_arr*(self.p - self.I)*tmp/theta[1], axis=1).reshape(x.shape)
+            return self.root2v*x*K/theta[1]**2 + (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*\
+                        np.sum(-self.factorial_arr*(self.p - self.I)*tmp/theta[1], axis=1)).reshape(x.shape)
         elif mode == 2:
             return 2 * theta[2] * np.eye(x.shape[0])
 

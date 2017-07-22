@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 if __name__=="__main__":
     # Set some inputs
     N = 100
-    xmax = 5.0
-    xmin = -5.0
-    x = np.linspace(xmin, xmax, N)
+    xmax = 2.5
+    xmin = -2.5
+    x = xmin + (xmax - xmin)*np.random.random(N)
 
     # create a simple function
     yf = lambda x, a, b, c: a*x**2 + b*x + c
@@ -24,37 +24,41 @@ if __name__=="__main__":
 
     # simulate some data
     ytrue = yf(x, a, b, c)
-    sigma_n = 0.25
-    y = ytrue + sigma_n**2*np.random.randn(N)
+    sigma_n = 2.5
+    sy = sigma_n*np.random.randn(N)
+    y = ytrue + sy
 
     # Set mode and targets
     mode = "Full"
-    Np = 1000
+    Np = 50
     xp = np.linspace(xmin, xmax, Np)
     # instantiate GP class
-    GP = temporal_GP.TemporalGP(x, xp, y, covariance_function='sqexp', mode=mode)
+    GP = temporal_GP.TemporalGP(x, xp, y, covariance_function='mattern', mode=mode)
 
     # Guess inital hypers
     sigmaf0 = 1.0
     l0 = 1.0
-    sigman0 = 0.5
+    sigman0 = 1.5
     theta0 = np.array([sigmaf0, l0, sigman0])
 
     # Train GP
-    thetaf = GP.logp(theta0)
+    thetaf = GP.train(theta0)
+
+    print "Optimised hyperparameters = ", thetaf
 
     # Evaluate mean and covariance with these values
     fp = GP.meanf(thetaf)
-    fcov = GP.covf(thetaf)
 
     # Draw some samples
     Nsamps = 10
-    samps = np.random.multivariate_normal(fp, fcov, Nsamps).T
+    samps = GP.draw_samps(Nsamps,  thetaf)
 
     # Plot the results
     dir = '/home/landman/Projects/GP/examples/'
     plt.figure("temp_GP")
-    plt.plot(x, fp, 'k', lw=2, label='Mean')
-    plt.plot(x, samps, 'b', alpha=0.5)
+    plt.plot(xp, fp, 'k', lw=2, label='Mean')
+    plt.plot(xp, yf(xp, a, b, c), 'g')
+    plt.plot(xp, samps, 'b', alpha=0.5)
+    plt.errorbar(x, y, sy, fmt='xr', alpha=0.4)
     plt.savefig(dir+"temp_GP.png", dpi=250)
 

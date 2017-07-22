@@ -22,11 +22,10 @@ class sqexp(object):
         :param x: the inputs x[i] - x[j] (usually matrix of differences)
         :param noise: whether to add noise or not
         """
-        K = theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0))
         if noise:
-            return K + theta[2] ** 2.0 * np.eye(x.shape[0])
+            return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0)) + theta[2] ** 2.0 * np.eye(x.shape[0])
         else:
-            return K
+            return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0))
 
 
     def dcov_func(self, theta, x, K, mode=0):

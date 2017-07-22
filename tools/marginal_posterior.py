@@ -22,9 +22,9 @@ class evidence(object):
         self.mode = mode
         self.N = self.x.shape[0]
         if prior_mean is None:
-            yp = np.zeros(self.N)
+            yp = np.zeros([self.N, 1])
         else:
-            yp = prior_mean(x)
+            yp = prior_mean(x).reshape(self.N, 1)
         self.yDat = y - yp
         self.yTy = np.dot(self.yDat.T, self.yDat)
         if self.mode == "Full":
@@ -47,10 +47,10 @@ class evidence(object):
         """
         if self.mode == "Full":
             # tmp is Ky
-            tmp = self.kernel.cov_func(theta, self.XX, noise=True)
+            Ky = self.kernel.cov_func(theta, self.XX, noise=True)
             # tmp is L
             try:
-                tmp = np.linalg.cholesky(tmp)
+                tmp = np.linalg.cholesky(Ky)
             except:
                 logp = 1.0e8
                 dlogp = np.ones(theta.size) * 1.0e8
@@ -71,11 +71,11 @@ class evidence(object):
             tmp2 = np.dot(tmp2, tmp2.T)
             # tmp2 becomes Kinv - aaT
             tmp2 = tmp - tmp2
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, mode=0)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=0)
             dlogp[0] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0 #computes only the diagonal matrix product
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, mode=1)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=1)
             dlogp[1] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, mode=2)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=2)
             dlogp[2] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0
             return logp, dlogp
         elif self.mode == "RR":
@@ -106,6 +106,7 @@ class evidence(object):
             for i in xrange(theta.size - 1):
                 dSdtheta = self.kernel.dspectral_density(theta, S, self.s, mode=i)
                 dlogQdtheta[i] = np.sum(dSdtheta / S) - theta[2] ** 2 * np.sum(dSdtheta / S * np.diag(Zinv) / S)
+                tmp = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
                 dyTQinvydtheta[i] = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
             # Get derivatives w.r.t. sigma_n
             dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.m) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))

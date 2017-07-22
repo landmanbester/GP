@@ -29,11 +29,11 @@ class meanf(object):
         self.kernel = kernel
         self.mode = mode
         if prior_mean is None:
-            self.yp = np.zeros(self.x.shape[0])
-            self.fp = np.zeros(self.xp.shape[0])
+            self.yp = np.zeros([self.x.shape[0], 1])
+            self.fp = np.zeros([self.xp.shape[0], 1])
         else:
-            self.yp = prior_mean(x)
-            self.fp = prior_mean(xp)
+            self.yp = prior_mean(x).reshape(self.N, 1)
+            self.fp = prior_mean(xp).reshape(self.Np, 1)
         self.yDat = y - self.yp
         if self.mode == "Full":
             self.XX = XX
@@ -49,11 +49,10 @@ class meanf(object):
         """
         Computes the posterior mean function
         :param theta: hypers
-        :return posterior_mean: the posterior mean function of the GP 
         """
         if self.mode == "Full":
-            Kp = self.kernel.cov_func(theta, self.XXp, noise=False)
             Ky = self.kernel.cov_func(theta, self.XX, noise=True)
+            Kp = self.kernel.cov_func(theta, self.XXp, noise=False)
             L = np.linalg.cholesky(Ky)
             Linv = np.linalg.inv(L)
             LinvKp = np.dot(Linv, Kp)

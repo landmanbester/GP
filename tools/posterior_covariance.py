@@ -32,14 +32,14 @@ class covf(object):
             self.Phip = Phip
             self.s = s
 
-    def give_covaraince(self, theta):
+    def give_covariance(self, theta):
         """
         :param theta: hypers
         """
         if self.mode == "Full":
-            Kp = self.kernel.cov_func(theta, self.XXp, mode="nn")
-            Kpp = self.kernel.cov_func(theta, self.XXpp, mode="nn")
-            Ky = self.kernel.cov_func(theta, self.XX, mode="Noise")
+            Kp = self.kernel.cov_func(theta, self.XXp, noise=False)
+            Kpp = self.kernel.cov_func(theta, self.XXpp, noise=False)
+            Ky = self.kernel.cov_func(theta, self.XX, noise=True)
             L = np.linalg.cholesky(Ky)
             Linv = np.linalg.inv(L)
             LinvKp = np.dot(Linv, Kp)
