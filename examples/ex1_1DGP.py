@@ -33,7 +33,7 @@ if __name__=="__main__":
     Np = 150
     xp = np.linspace(xmin, xmax, Np)
     # instantiate GP class
-    GP = temporal_GP.TemporalGP(x, xp, y, covariance_function='mattern', mode=mode)
+    GP = temporal_GP.TemporalGP(x, xp, y, covariance_function='sqexp', mode=mode)
 
     # Guess inital hypers
     sigmaf0 = 1.0
