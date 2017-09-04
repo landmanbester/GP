@@ -29,8 +29,8 @@ if __name__=="__main__":
     y = ytrue + sy
 
     # Set mode and targets
-    mode = "Full"
-    Np = 50
+    mode = "RR"
+    Np = 150
     xp = np.linspace(xmin, xmax, Np)
     # instantiate GP class
     GP = temporal_GP.TemporalGP(x, xp, y, covariance_function='mattern', mode=mode)
@@ -57,8 +57,8 @@ if __name__=="__main__":
     dir = '/home/landman/Projects/GP/examples/'
     plt.figure("temp_GP")
     plt.plot(xp, fp, 'k', lw=2, label='Mean')
-    plt.plot(xp, yf(xp, a, b, c), 'g')
-    plt.plot(xp, samps, 'b', alpha=0.5)
-    plt.errorbar(x, y, sy, fmt='xr', alpha=0.4)
-    plt.savefig(dir+"temp_GP.png", dpi=250)
+    plt.plot(xp, yf(xp, a, b, c), 'g', label="Model")
+    plt.plot(xp, samps, 'b', alpha=0.25, label="samps")
+    plt.errorbar(x, y, sy, fmt='xr', alpha=0.25)
+    plt.savefig(dir+"temp_GP"+mode+".png", dpi=250)
 
