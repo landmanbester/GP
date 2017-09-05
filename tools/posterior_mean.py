@@ -10,8 +10,8 @@ class meanf(object):
     def __init__(self, x, xp, y, kernel, mode="Full", prior_mean=None, XX=None, XXp=None, Phi=None, Phip=None, \
                  PhiTPhi = None, s=None, grid_regular=False):
         """
-        :param x: inputs
-        :param xp: targets
+        :param x: N x D vector of inputs
+        :param xp: Np x D vector of targets
         :param y: the data
         :param kernel: a class holding the covariance function and spectral densities 
         :param mode: whether to use full or RR GPR
@@ -26,14 +26,16 @@ class meanf(object):
         """
         self.x = x
         self.xp = xp
+        self.N = x.shape[0]
+        self.Np = xp.shape[0]
         self.kernel = kernel
         self.mode = mode
         if prior_mean is None:
-            self.yp = np.zeros([self.x.shape[0], 1])
-            self.fp = np.zeros([self.xp.shape[0], 1])
+            self.yp = np.zeros([self.N, 1])
+            self.fp = np.zeros([self.Np, 1])
         else:
-            self.yp = prior_mean(x).reshape(self.N, 1)
-            self.fp = prior_mean(xp).reshape(self.Np, 1)
+            self.yp = (prior_mean(x)).reshape(self.N, 1)
+            self.fp = (prior_mean(xp)).reshape(self.Np, 1)
         self.yDat = y - self.yp
         if self.mode == "Full":
             self.XX = XX

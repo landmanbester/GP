@@ -8,11 +8,12 @@ from scipy import optimize as opt
 from GP.tools import posterior_mean, posterior_covariance, marginal_posterior
 
 class TemporalGP(object):
-    def __init__(self, x, xp, y, covariance_function='sqexp', mode="Full", nu=2.5, basis="Rect", M=12, L=5.0, grid_regular=False):
+    def __init__(self, x, xp, y, prior_mean=None, covariance_function='sqexp', mode="Full", nu=2.5, basis="Rect", M=12, L=5.0, grid_regular=False):
         """
         :param x: vector of inputs
         :param xp: vector of targets
         :param y: vector of data
+        :param prior_mean: a prior mean function (must be callable)
         :param covariance_function: the kind of covariance function to use (currently 'sqexp' or 'mattern')
         :param mode: whether to do a full GPR or a reduced rank GPR (currently "Full" or "RR")
         :param nu: specifies the kind of Mattern function to use (must be a half integer)
@@ -33,6 +34,14 @@ class TemporalGP(object):
         self.Np = xp.size
         self.xp = xp.reshape(self.Np, self.D)
         self.y = y.reshape(self.N, self.D)
+
+        # check that prior mean is callable and set it
+        try:
+            ym = prior_mean(self.x)
+            self.prior_mean = prior_mean
+            del ym
+        except:
+            raise Exception("Prior mean function must be callable")
 
         # set covariance
         if covariance_function=="sqexp":
@@ -55,7 +64,8 @@ class TemporalGP(object):
             self.XXp = abs_diff.abs_diff(x, xp)
             self.XXpp = abs_diff.abs_diff(xp, xp)
             # Instantiate posterior mean, cov and evidence classes
-            self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode, XX=self.XX, XXp=self.XXp)
+            self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode,
+                                              prior_mean=self.prior_mean, XX=self.XX, XXp=self.XXp)
             self.meanf = lambda theta: self.meano.give_mean(theta)
             self.covo = posterior_covariance.covf(self.kernel, mode=self.mode, XX=self.XX, XXp=self.XXp, XXpp=self.XXpp)
             self.covf = lambda theta: self.covo.give_covariance(theta)

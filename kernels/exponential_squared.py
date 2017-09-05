@@ -62,3 +62,24 @@ class sqexp(object):
             return 2 * S / theta[0]
         elif mode == 1:
             return self.D*S/theta[1] - 4*np.pi**2*s**2*theta[1]*S
+
+    # def spectral_density(self, theta, s):
+    #     """
+    #     The spectral density of the squared exponential covariance function
+    #     :param theta: hypers
+    #     :param s: Fourier dual of x
+    #     """
+    #     return theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)
+    #
+    # def dspectral_density(self, theta, S, s, mode=0):
+    #     """
+    #     Derivative of the spectral density corresponding to the squared exponential covariance function
+    #     :param theta: hypers
+    #     :param S: value of spectral density
+    #     :param s: Fourier dual of x
+    #     :param mode: use to determine which hyper we are taking the derivative w.r.t.
+    #     """
+    #     if mode == 0:
+    #         return 2 * S / theta[0]
+    #     elif mode == 1:
+    #         return self.D*S/theta[1] - s**2*theta[1]*S
