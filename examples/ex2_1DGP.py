@@ -1,17 +1,14 @@
-#!/usr/bin/env python
-"""
-In this example we see how to do a 1D GP in both Full and RR modes. We also compare perfomance of these  
-"""
+
 
 import numpy as np
-from GP import temporal_GP
+from GP import ClassGP
 import matplotlib.pyplot as plt
 
 if __name__=="__main__":
     nrun = 1000
     thetas = np.zeros([nrun, 3])
     # Set some inputs
-    N = 500
+    N = 250
     xmax = 5.5
     xmin = -5.5
     x = xmin + (xmax - xmin)*np.random.random(N)
@@ -27,18 +24,18 @@ if __name__=="__main__":
     # simulate some data
     ytrue = yf(x)
     sigma_n = 2.5
-
-    # Set mode and targets
-    mode = "RR"
-    Np = 150
-    xp = np.linspace(xmin, xmax, Np)
-
     for i in xrange(nrun):
         sy = sigma_n*np.random.randn(N)
         y = ytrue + sy
 
+        # Set mode and targets
+        mode = "Full"
+        Np = 150
+        xp = np.linspace(xmin, xmax, Np)
         # instantiate GP class
-        GP = temporal_GP.TemporalGP(x, xp, y, prior_mean=yf, covariance_function='sqexp', mode=mode, M=25, L=10)
+        GP = ClassGP.ClassGP(x, xp, mode="set")
+
+        GP.set_covariance()
 
         # Guess inital hypers
         sigmaf0 = np.std(y)
@@ -47,7 +44,7 @@ if __name__=="__main__":
         theta0 = np.array([sigmaf0, l0, sigman0])
 
         # Train GP
-        thetaf = GP.train(theta0)
+        thetaf = GP.trainGP(theta0, y)
 
         thetas[i,:] = thetaf
         print i, thetaf
@@ -74,20 +71,3 @@ if __name__=="__main__":
     plt.ylabel(r'$\sigma_f$')
     plt.xlabel(r'$l$')
     plt.savefig(dir + "sigma_f_vs_l.png", dpi=250)
-
-    # # Evaluate mean and covariance with these values
-    # fp = GP.meanf(thetaf)
-    #
-    # # Draw some samples
-    # Nsamps = 10
-    # samps = GP.draw_samps(Nsamps,  thetaf)
-    #
-    # # Plot the results
-    # dir = '/home/landman/Projects/GP/examples/'
-    # plt.figure("temp_GP")
-    # plt.plot(xp, fp, 'k', lw=2, label='Mean')
-    # plt.plot(xp, yf(xp), 'g', label="Model")
-    # plt.plot(xp, samps, 'b', alpha=0.25, label="samps")
-    # plt.errorbar(x, y, sy, fmt='xr', alpha=0.25)
-    # plt.savefig(dir+"temp_GP"+mode+".png", dpi=250)
-
