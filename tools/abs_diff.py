@@ -16,7 +16,7 @@ def abs_diff(x,xp):
     except:
         N = x.size
         D = 1
-        Np = xp.shape[0]
+        Np = xp.size
         x = np.reshape(x, (N, D))
         xp = np.reshape(xp, (Np, D))
     xD = np.zeros([D, N, Np])

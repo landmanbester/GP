@@ -20,4 +20,4 @@ def Lambda(j, L):
     :param j: Dx1 array of integers (order of the basis function in the summation)
     :param L: Dx1 array of floats (boundary of domain)
     """
-    return np.sum(j*np.pi/(2*L)**2)
+    return np.sum((j*np.pi/(2*L))**2)
