@@ -69,7 +69,7 @@ class sqexp(object):
         :param theta: hypers
         :param s: Fourier dual of x
         """
-        return 2.5*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)  # figure out where factor of 2.5 comes from!!!!!!!!!
+        return 2.506628*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)  # figure out where fidget factor of 2.5 comes from!!!!!!!!!
 
     def dspectral_density(self, theta, S, s, mode=0):
         """

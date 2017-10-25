@@ -25,7 +25,7 @@ class evidence(object):
             yp = np.zeros([self.N, 1])
         else:
             yp = prior_mean(x).reshape(self.N, 1)
-        self.yDat = y - yp
+        self.yDat = y.reshape(self.N, 1) - yp
         self.yTy = np.dot(self.yDat.T, self.yDat)
         if self.mode == "Full":
             self.XX = XX
@@ -80,17 +80,24 @@ class evidence(object):
             return logp, dlogp
         elif self.mode == "RR":
             S = self.kernel.spectral_density(theta, self.s)
+            if np.any(S < 1e-13):
+                I = np.argwhere(S < 1e-13)
+                S[I] += 1.0e-13
             Lambdainv = np.diag(1.0 / S)
             Z = self.PhiTPhi + theta[2] ** 2 * Lambdainv
             try:
                 L = np.linalg.cholesky(Z)
             except:
                 print "Had to add jitter, theta = ", theta
-                L = np.linalg.cholesky(Z + 1.0e-6)
-                #
-                # logp = 1.0e2
-                # dlogp = np.ones(theta.size)*1.0e8
-                # return logp, dlogp
+                F = True
+                while F:
+                    jit = 1e-6
+                    try:
+                        L = np.linalg.cholesky(Z + jit*np.eye(self.M))
+                        F = False
+                    except:
+                        jit *=10.0
+                        F = True
             Linv = np.linalg.inv(L)
             Zinv = np.dot(Linv.T, Linv)
             logdetZ = 2.0 * np.sum(np.log(np.diag(L)))
@@ -106,11 +113,10 @@ class evidence(object):
             for i in xrange(theta.size - 1):
                 dSdtheta = self.kernel.dspectral_density(theta, S, self.s, mode=i)
                 dlogQdtheta[i] = np.sum(dSdtheta / S) - theta[2] ** 2 * np.sum(dSdtheta / S * np.diag(Zinv) / S)
-                tmp = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
-                dyTQinvydtheta[i] = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
+                dyTQinvydtheta[i] = -np.dot(ZinvPhiTy.T, dSdtheta / S * ZinvPhiTy.squeeze()/S)
             # Get derivatives w.r.t. sigma_n
             dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.M) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))
-            dyTQinvydtheta[2] = 2 * (np.dot(ZinvPhiTy.T, np.dot(Lambdainv, ZinvPhiTy)) - yTQinvy) / theta[2]
+            dyTQinvydtheta[2] = 2 * (np.dot(ZinvPhiTy.T, ZinvPhiTy.squeeze()/S) - yTQinvy) / theta[2]
 
             logp = (yTQinvy + logQ + self.N * np.log(2 * np.pi)) / 2.0
             dlogp = (dlogQdtheta + dyTQinvydtheta) / 2

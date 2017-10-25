@@ -12,7 +12,7 @@ from GP.basisfuncs import rectangular
 
 if __name__=="__main__":
     # set params and get matrix of differences
-    N = 50
+    N = 100
     Np = 250
     tmin = 0.0
     tmax = 1.0
@@ -28,7 +28,7 @@ if __name__=="__main__":
 
     # get some random values of theta to compare RR to full
     sigfm = 1.0
-    lm = 0.25
+    lm = 0.5
     signm = 1.0
     thetam = np.array([sigfm, lm, signm])
 
@@ -51,13 +51,40 @@ if __name__=="__main__":
     from GP.tools import make_basis
     from GP.basisfuncs import rectangular
     M = np.array([24])
-    L = np.array([2*(tmax - tmin)])
+    L = np.array([3*(tmax - tmin)])
     Phi = make_basis.get_eigenvectors(t.reshape(N, 1), M, L, rectangular.phi)
     Lambda = make_basis.get_eigenvals(M, L, rectangular.Lambda)
     s = np.sqrt(Lambda)
-    # S = np.zeros([Ntheta, M[0]])
+    S = np.zeros([Ntheta, M[0]])
     for i in xrange(Ntheta):
         K = kernel.cov_func(theta[i], tt, noise=False)
+        dKdtheta = kernel.dcov_func(theta[i], tt, K, mode=1)
         S = kernel.spectral_density(theta[i], s)
+        dSdtheta = kernel.dspectral_density(theta[i], S, s, mode=1)
         Ktilde = Phi.dot(np.diag(S).dot(Phi.T))
-        print K[:, 0]/Ktilde[:, 0], theta[i,0:2], 2*L/M, L
+        dKtildedtheta = Phi.dot(np.diag(dSdtheta).dot(Phi.T))
+        #print K[:, 0]/Ktilde[:, 0], theta[i,0:2], theta[i, 0:2], 2*L/M, L
+        #print np.mean(K[:, 0]/Ktilde[:, 0])
+        #print dKdtheta[:, 1] / dKtildedtheta[:, 1], theta[i, 0:2], 2 * L / M, L
+        print np.max(np.abs(dKdtheta - dKtildedtheta)), theta[i, 0:2], 2 * L / M, L
+    # compare evidence
+    # set parameters
+    a = 5.0
+    b = 1.0
+    c = 1.0
+
+    # create a simple function
+    yf = lambda x: a*x**2 + b*x + c
+
+    # simulate some data
+    ytrue = yf(t)
+    sy = signm * np.random.randn(N)
+    y = ytrue + sy
+
+    from GP.tools import marginal_posterior
+    evidencefull = marginal_posterior.evidence(t, y, kernel, mode="Full", XX=tt)
+    evidenceRR = marginal_posterior.evidence(t, y, kernel, mode="RR", Phi=Phi, PhiTPhi=np.dot(Phi.T, Phi), s=s)
+
+    for i in xrange(Ntheta):
+        print evidencefull.logL(theta[i])
+        print evidenceRR.logL(theta[i])

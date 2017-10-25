@@ -8,12 +8,12 @@ from GP import temporal_GP
 import matplotlib.pyplot as plt
 
 if __name__=="__main__":
-    nrun = 1000
+    nrun = 10000
     thetas = np.zeros([nrun, 3])
     # Set some inputs
     N = 500
-    xmax = 5.5
-    xmin = -5.5
+    xmax = 2.5
+    xmin = -2.5
     x = xmin + (xmax - xmin)*np.random.random(N)
 
     # set parameters
@@ -61,18 +61,18 @@ if __name__=="__main__":
 
     plt.figure('l')
     plt.hist(thetas[:, 1], bins=15)
-    plt.ylabel(r'$l$')
+    plt.xlabel(r'$l$')
     plt.savefig(dir + "l.png", dpi=250)
 
     plt.figure('sigman')
     plt.hist(thetas[:, 2], bins=15)
-    plt.ylabel(r'$\sigma_n$')
+    plt.xlabel(r'$\sigma_n$')
     plt.savefig(dir + "sigman.png", dpi=250)
 
     plt.figure("2d_hist")
     plt.hist2d(thetas[:,0], thetas[:,1], bins=15)
-    plt.ylabel(r'$\sigma_f$')
-    plt.xlabel(r'$l$')
+    plt.ylabel(r'$l$')
+    plt.xlabel(r'$\sigma_f$')
     plt.savefig(dir + "sigma_f_vs_l.png", dpi=250)
 
     # # Evaluate mean and covariance with these values

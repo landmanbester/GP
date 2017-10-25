@@ -127,7 +127,7 @@ class TemporalGP(object):
                 bnds = ((1e-6, None), (1e-6, None), (1e-6, None))
             elif self.mode=="RR":
                 # this keeps l within a reasonable range
-                bnds = ((1e-6, None), (self.L[0]/self.M[0], 0.9*self.L[0]), (1e-6, None))
+                bnds = ((1e-6, None), ((self.L[0] + 0.0)/self.M[0], 0.9*self.L[0]), (1e-6, None))
         else:
             bnds = bounds # make sure above criteria on bounds satisfied if passing default bounds
 
