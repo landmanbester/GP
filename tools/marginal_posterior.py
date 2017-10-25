@@ -31,7 +31,7 @@ class evidence(object):
             self.XX = XX
         elif self.mode == "RR":
             self.s = s
-            self.m = PhiTPhi.shape[0]
+            self.M = PhiTPhi.shape[0]
             self.Phi = Phi
             self.grid_regular = grid_regular
             self.PhiTPhi = PhiTPhi
@@ -95,7 +95,7 @@ class evidence(object):
             Zinv = np.dot(Linv.T, Linv)
             logdetZ = 2.0 * np.sum(np.log(np.diag(L)))
             # Get the log term
-            logQ = (self.N - self.m) * np.log(theta[2] ** 2) + logdetZ + np.sum(np.log(S))
+            logQ = (self.N - self.M) * np.log(theta[2] ** 2) + logdetZ + np.sum(np.log(S))
             # Get the quadratic term
             PhiTy = np.dot(self.Phi.T, self.yDat)
             ZinvPhiTy = np.dot(Zinv, PhiTy)
@@ -109,7 +109,7 @@ class evidence(object):
                 tmp = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
                 dyTQinvydtheta[i] = -np.dot(ZinvPhiTy.T, np.dot(np.diag(dSdtheta / S ** 2), ZinvPhiTy))
             # Get derivatives w.r.t. sigma_n
-            dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.m) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))
+            dlogQdtheta[2] = 2 * theta[2] * ((self.N - self.M) / theta[2] ** 2 + np.sum(np.diag(Zinv) / S))
             dyTQinvydtheta[2] = 2 * (np.dot(ZinvPhiTy.T, np.dot(Lambdainv, ZinvPhiTy)) - yTQinvy) / theta[2]
 
             logp = (yTQinvy + logQ + self.N * np.log(2 * np.pi)) / 2.0

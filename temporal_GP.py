@@ -75,11 +75,11 @@ class TemporalGP(object):
             from GP.tools import make_basis
             # check consistency of inputs
             if np.asarray(M).size == 1: # 1D so only a single value allowed
-                self.M = np.array([M])
+                self.M = np.array([M])  # cast as array to make it compatible with make_basis class
             else:
                 raise Exception('Inconsistent dimensions specified for M. Must be 1D.')
             if np.asarray(L).size == 1: # 1D so only a single value allowed
-                self.L = np.array([L])
+                self.L = np.array([L]) # cast as array to make it compatible with make_basis class
             else:
                 raise Exception('Inconsistent dimensions specified for L. Must be 1D.')
             # Construct the basis functions
@@ -107,7 +107,7 @@ class TemporalGP(object):
                                                   PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
             self.covf = lambda theta: self.covo.give_covariance(theta)
             self.logpo = marginal_posterior.evidence(self.x, self.y, self.kernel, mode=self.mode, Phi=self.Phi,
-                                                     PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
+                                                        PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
             self.logp = lambda theta: self.logpo.logL(theta)
         else:
             raise Exception('Mode %s not supported yet'%mode)
@@ -122,19 +122,31 @@ class TemporalGP(object):
         :return: the optimised hyperparameters
         """
         if bounds is None:
-            # Set default bounds for hypers (they must be strictly positive)
-            bnds = ((1e-7, None), (1e-7, None), (1e-7, None))
+            if self.mode=="full":
+                # Set default bounds for hypers (they must be strictly positive)
+                bnds = ((1e-6, None), (1e-6, None), (1e-6, None))
+            elif self.mode=="RR":
+                # this keeps l within a reasonable range
+                bnds = ((1e-6, None), (self.L[0]/self.M[0], 0.9*self.L[0]), (1e-6, None))
         else:
-            bnds = bounds
+            bnds = bounds # make sure above criteria on bounds satisfied if passing default bounds
 
         # Do optimisation
         thetap = opt.fmin_l_bfgs_b(self.logp, theta0, fprime=None, bounds=bnds) #, factr=1e10, pgtol=0.1)
+
+        theta = thetap[0]
+
+        if theta[1] < 2*self.L/self.M:
+            print "Warning l < 2L/M so result might be inaccurate. Consider increasing M (or decreasing L if possible)"
+        elif theta[1] > 0.6*self.L:
+            print "Warning l > 0.6*L so result might be inaccurate. Consider increasing L"
+
 
         #Check for convergence
         if thetap[2]["warnflag"]:
             print "Warning flag raised"
         # Return optimised value of theta
-        return thetap[0]
+        return theta
 
     def set_posterior(self, theta):
         """

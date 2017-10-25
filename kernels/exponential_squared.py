@@ -42,13 +42,13 @@ class sqexp(object):
         elif mode == 2:
             return 2 * theta[2] * np.eye(x.shape[0])
 
-    def spectral_density(self, theta, s):
-        """
-        The spectral density of the squared exponential covariance function
-        :param theta: hypers
-        :param s: Fourier dual of x
-        """
-        return theta[0]**2.0*(2.0*np.pi*theta[1]**2)**(self.D/2.0)*np.exp(-2*np.pi**2*theta[1]**2*s**2)
+    # def spectral_density(self, theta, s):
+    #     """
+    #     The spectral density of the squared exponential covariance function
+    #     :param theta: hypers
+    #     :param s: Fourier dual of x
+    #     """
+    #     return theta[0]**2.0*(2.0*np.pi*theta[1]**2)**(self.D/2.0)*np.exp(-2*np.pi**2*theta[1]**2*s**2)
 
     # def dspectral_density(self, theta, S, s, mode=0):
     #     """
@@ -69,7 +69,7 @@ class sqexp(object):
         :param theta: hypers
         :param s: Fourier dual of x
         """
-        return theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)
+        return 2.5*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)  # figure out where factor of 2.5 comes from!!!!!!!!!
 
     def dspectral_density(self, theta, S, s, mode=0):
         """
