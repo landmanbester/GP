@@ -27,7 +27,6 @@ class sqexp(object):
         else:
             return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0))
 
-
     def dcov_func(self, theta, x, K, mode=0):
         """
         Derivates of the covariance function w.r.t. the hyperparameters
@@ -69,7 +68,7 @@ class sqexp(object):
         :param theta: hypers
         :param s: Fourier dual of x
         """
-        return 2.506628*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)  # figure out where fidget factor of 2.5 comes from!!!!!!!!!
+        return np.sqrt(2*np.pi)*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)
 
     def dspectral_density(self, theta, S, s, mode=0):
         """

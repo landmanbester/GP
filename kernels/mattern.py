@@ -45,6 +45,12 @@ class mattern(object):
         else:
             return K
 
+    def cov_func2(self, theta, x, noise=True):
+        if not noise:
+            return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2))
+        else:
+            return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (
+            1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2)) + theta[2]**2.0*np.eye(x.shape[0])
 
     def dcov_func(self, theta, x, K, mode=0):
         """
