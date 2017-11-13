@@ -50,6 +50,19 @@ class evidence(object):
             Ky = self.kernel.cov_func(theta, self.XX, noise=True)
             # tmp is L
             try:
+                L = np.linalg.cholesky(Ky)
+            except:
+                print "Had to add jitter, theta = ", theta
+                F = True
+                while F:
+                    jit = 1e-6
+                    try:
+                        L = np.linalg.cholesky(Ky + jit*np.eye(self.N))
+                        F = False
+                    except:
+                        jit *=10.0
+                        F = True
+            try:
                 tmp = np.linalg.cholesky(Ky)
             except:
                 logp = 1.0e8
@@ -60,7 +73,7 @@ class evidence(object):
             tmp = np.linalg.inv(tmp)
             # tmp2 is Linvy
             tmp2 = np.dot(tmp, self.yDat)
-            logp = np.dot(tmp2.T, tmp2) / 2.0 + detK / 2.0 + self.N * np.log(2 * np.pi) / 2.0
+            logp = np.dot(tmp2.conj().T, tmp2).real / 2.0 + detK / 2.0 + self.N * np.log(2 * np.pi) / 2.0
             nhypers = theta.size
             dlogp = np.zeros(nhypers)
             # tmp is Kinv
@@ -68,14 +81,15 @@ class evidence(object):
             # tmp2 becomes Kinvy
             tmp2 = np.reshape(np.dot(tmp, self.yDat), (self.N, 1))
             # tmp2 becomes aaT
-            tmp2 = np.dot(tmp2, tmp2.T)
+            tmp2 = (np.dot(tmp2, tmp2.conj().T)).real
             # tmp2 becomes Kinv - aaT
             tmp2 = tmp - tmp2
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=0)
+            K = self.kernel.cov_func(theta, self.XX, noise=False)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, K, mode=0)
             dlogp[0] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0 #computes only the diagonal matrix product
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=1)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, K, mode=1)
             dlogp[1] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0
-            dKdtheta = self.kernel.dcov_func(theta, self.XX, Ky, mode=2)
+            dKdtheta = self.kernel.dcov_func(theta, self.XX, K, mode=2)
             dlogp[2] = np.sum(np.einsum('ij,ji->i', tmp2, dKdtheta)) / 2.0
             return logp, dlogp
         elif self.mode == "RR":

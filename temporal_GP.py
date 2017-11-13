@@ -8,7 +8,7 @@ from scipy import optimize as opt
 from GP.tools import posterior_mean, posterior_covariance, marginal_posterior
 
 class TemporalGP(object):
-    def __init__(self, x, xp, y, prior_mean=None, covariance_function='sqexp', mode="Full", nu=2.5, basis="Rect", M=12, L=5.0, grid_regular=False):
+    def __init__(self, x, xp, y, Sigmay=None, prior_mean=None, covariance_function='sqexp', mode="Full", nu=2.5, basis="Rect", M=12, L=5.0, grid_regular=False):
         """
         :param x: vector of inputs
         :param xp: vector of targets
@@ -47,7 +47,7 @@ class TemporalGP(object):
         if covariance_function=="sqexp":
             from GP.kernels import exponential_squared
             # Initialise kernel
-            self.kernel = exponential_squared.sqexp()
+            self.kernel = exponential_squared.sqexp(Sigmay)
         elif covariance_function=="mattern":
             from GP.kernels import mattern
             # Initialise kernel
@@ -122,7 +122,7 @@ class TemporalGP(object):
         :return: the optimised hyperparameters
         """
         if bounds is None:
-            if self.mode=="full":
+            if self.mode=="Full":
                 # Set default bounds for hypers (they must be strictly positive)
                 bnds = ((1e-6, None), (1e-6, None), (1e-6, None))
             elif self.mode=="RR":
@@ -136,10 +136,11 @@ class TemporalGP(object):
 
         theta = thetap[0]
 
-        if theta[1] < 2*self.L/self.M:
-            print "Warning l < 2L/M so result might be inaccurate. Consider increasing M (or decreasing L if possible)"
-        elif theta[1] > 0.6*self.L:
-            print "Warning l > 0.6*L so result might be inaccurate. Consider increasing L"
+        if self.mode=="RR":
+            if theta[1] < 2*self.L/self.M:
+                print "Warning l < 2L/M so result might be inaccurate. Consider increasing M (or decreasing L if possible)"
+            elif theta[1] > 0.6*self.L:
+                print "Warning l > 0.6*L so result might be inaccurate. Consider increasing L"
 
 
         #Check for convergence

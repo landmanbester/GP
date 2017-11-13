@@ -7,7 +7,7 @@ from scipy.special import gamma
 from scipy.misc import factorial
 
 class mattern(object):
-    def __init__(self, p=3, D=1):
+    def __init__(self, p=3, D=1, Sigmay=None):
         # Check that p is an integer
         if not isinstance(p, (int, long)):
             print "Converting p to integer"
@@ -27,47 +27,67 @@ class mattern(object):
 
         # And for the spectral density
         self.preSterm = 2**D*np.pi**(D/2.0)*gamma(self.v + D/2.0)*(2*self.v)**self.v/gamma(self.v)
+        self.Sigmay = Sigmay
 
 
+
+    # def cov_func(self, theta, x, noise=True):
+    #     """
+    #     Covariance function possibly including noise variance
+    #     :param theta: hypers
+    #     :param x: the inputs x[i] - x[j] (usually matrix of differences)
+    #     :param noise: whether to add noise or not
+    #     """
+    #     tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
+    #     K = (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*np.sum(self.factorial_arr*tmp,
+    #                                                                            axis=1)).reshape(x.shape)
+    #     if noise:
+    #         return K + theta[2] ** 2.0 * np.eye(x.shape[0])
+    #     else:
+    #         return K
 
     def cov_func(self, theta, x, noise=True):
-        """
-        Covariance function possibly including noise variance
-        :param theta: hypers
-        :param x: the inputs x[i] - x[j] (usually matrix of differences)
-        :param noise: whether to add noise or not
-        """
-        tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
-        K = (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*np.sum(self.factorial_arr*tmp,
-                                                                               axis=1)).reshape(x.shape)
-        if noise:
-            return K + theta[2] ** 2.0 * np.eye(x.shape[0])
-        else:
-            return K
-
-    def cov_func2(self, theta, x, noise=True):
         if not noise:
             return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2))
         else:
-            return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (
-            1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2)) + theta[2]**2.0*np.eye(x.shape[0])
+            if self.Sigmay is not None:
+                return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (
+                    1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2)) + theta[2]**2.0*self.Sigmay
+            else:
+                return theta[0] ** 2 * np.exp(-np.sqrt(5) * np.abs(x) / theta[1]) * (
+                    1 + np.sqrt(5) * np.abs(x) / theta[1] + 5 * np.abs(x) ** 2 / (3 * theta[1] ** 2)) + theta[2]**2.0*np.eye(x.shape[0])
 
     def dcov_func(self, theta, x, K, mode=0):
         """
         Derivates of the covariance function w.r.t. the hyperparameters
-        :param theta: hypers
-        :param x: the inputs x[i] - x[j] (usually matrix of differences)
-        :param K: the value of the covariance function
-        :param mode: use to determine which hyper we are taking the derivative w.r.t.
         """
         if mode == 0:
-            return 2 * K / theta[0]
+            return 2*K/theta[0]
         elif mode == 1:
-            tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
-            return self.root2v*x*K/theta[1]**2 + (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*\
-                        np.sum(-self.factorial_arr*(self.p - self.I)*tmp/theta[1], axis=1)).reshape(x.shape)
+            return np.sqrt(5)*np.abs(x)*K/theta[1]**2 + theta[0] ** 2 * \
+                        np.exp(-np.sqrt(5) * np.abs(x) / theta[1])*(-np.sqrt(5) * np.abs(x) / theta[1]**2 - 10 * np.abs(x) ** 2 / (3 * theta[1] ** 3))
         elif mode == 2:
-            return 2 * theta[2] * np.eye(x.shape[0])
+            if self.Sigmay is not None:
+                return 2 * theta[2] * self.Sigmay
+            else:
+                return 2 * theta[2] * np.eye(x.shape[0])
+
+    # def dcov_func(self, theta, x, K, mode=0):
+    #     """
+    #     Derivates of the covariance function w.r.t. the hyperparameters
+    #     :param theta: hypers
+    #     :param x: the inputs x[i] - x[j] (usually matrix of differences)
+    #     :param K: the value of the covariance function
+    #     :param mode: use to determine which hyper we are taking the derivative w.r.t.
+    #     """
+    #     if mode == 0:
+    #         return 2 * K / theta[0]
+    #     elif mode == 1:
+    #         tmp = np.tile(2 * self.root2v * x.flatten() / theta[1], (self.p + 1, 1)).T ** (self.p - self.I)
+    #         return self.root2v*x*K/theta[1]**2 + (theta[0]**2.0*np.exp(-self.root2v*x.flatten()/theta[1])*self.gamma_term*\
+    #                     np.sum(-self.factorial_arr*(self.p - self.I)*tmp/theta[1], axis=1)).reshape(x.shape)
+    #     elif mode == 2:
+    #         return 2 * theta[2] * np.eye(x.shape[0])
 
     def spectral_density(self, theta, s):
         """

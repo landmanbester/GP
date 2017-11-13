@@ -6,13 +6,14 @@ import numpy as np
 
 
 class sqexp(object):
-    def __init__(self, p=None, D=1):
+    def __init__(self, p=None, D=1, Sigmay=None):
         # p is not relevant to sq exp
         # Check that D is an integer
         if not isinstance(D, (int, long)):
             print "Converting D to integer"
             D = int(D)
         self.D = D
+        self.Sigmay = Sigmay
 
 
     def cov_func(self, theta, x, noise=True):
@@ -23,7 +24,10 @@ class sqexp(object):
         :param noise: whether to add noise or not
         """
         if noise:
-            return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0)) + theta[2] ** 2.0 * np.eye(x.shape[0])
+            if self.Sigmay is not None:
+                return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0)) + theta[2] ** 2.0 * self.Sigmay
+            else:
+                return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0)) + theta[2] ** 2.0 * np.eye(x.shape[0])
         else:
             return theta[0] ** 2.0 * np.exp(-x ** 2.0 / (2.0 * theta[1] ** 2.0))
 
@@ -39,7 +43,10 @@ class sqexp(object):
         elif mode == 1:
             return x ** 2 * K / theta[1] ** 3
         elif mode == 2:
-            return 2 * theta[2] * np.eye(x.shape[0])
+            if self.Sigmay is not None:
+                return 2 * theta[2] * self.Sigmay
+            else:
+                return 2 * theta[2] * np.eye(x.shape[0])
 
     # def spectral_density(self, theta, s):
     #     """
