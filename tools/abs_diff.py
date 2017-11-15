@@ -12,7 +12,7 @@ def abs_diff(x,xp):
     """
     try:
         N, D = x.shape
-        Np = xp.shape[0]
+        Np, D = xp.shape
     except:
         N = x.size
         D = 1

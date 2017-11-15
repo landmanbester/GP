@@ -60,8 +60,8 @@ class TemporalGP(object):
         if mode=="Full": # here we need the differences squared
             from GP.tools import abs_diff
             # Initialise absolute differences
-            self.XX = abs_diff.abs_diff(x, x)
-            self.XXp = abs_diff.abs_diff(x, xp)
+            self.XX = abs_diff.abs_diff(self.x, self.x)
+            self.XXp = abs_diff.abs_diff(self.x, xp)
             self.XXpp = abs_diff.abs_diff(xp, xp)
             # Instantiate posterior mean, cov and evidence classes
             self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode,
@@ -83,7 +83,8 @@ class TemporalGP(object):
             else:
                 raise Exception('Inconsistent dimensions specified for L. Must be 1D.')
             # Construct the basis functions
-            if basis=="Rect":
+            self.basis = basis
+            if self.basis == "Rect":
                 from GP.basisfuncs import rectangular
                 self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
                 self.Phip = make_basis.get_eigenvectors(self.xp, self.M, self.L, rectangular.phi)
@@ -101,7 +102,8 @@ class TemporalGP(object):
             self.s = np.sqrt(self.Lambda)
 
             self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode, Phi=self.Phi,
-                                        Phip=self.Phip, PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
+                                        Phip=self.Phip, PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular,
+                                        prior_mean=self.prior_mean)
             self.meanf = lambda theta : self.meano.give_mean(theta)
             self.covo = posterior_covariance.covf(self.kernel, mode=self.mode, Phi=self.Phi, Phip=self.Phip,
                                                   PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
@@ -149,28 +151,68 @@ class TemporalGP(object):
         # Return optimised value of theta
         return theta
 
-    def set_posterior(self, theta):
+    def reset_targets(self, xp):
+        try:
+            self.Np, D = xp.shape
+        except:
+            self.Np = xp.size
+            D = 1
+            xp = np.reshape(xp, (self.Np, D))
+
+        self.xp = xp
+        if self.mode=="Full":
+            from GP.tools import abs_diff
+            self.XXp = abs_diff.abs_diff(self.x, self.xp)
+            self.XXpp = abs_diff.abs_diff(self.xp, self.xp)
+            # Instantiate posterior mean, cov and evidence classes
+            self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode,
+                                              prior_mean=self.prior_mean, XX=self.XX, XXp=self.XXp)
+            self.meanf = lambda theta: self.meano.give_mean(theta)
+            self.covo = posterior_covariance.covf(self.kernel, mode=self.mode, XX=self.XX, XXp=self.XXp, XXpp=self.XXpp)
+            self.covf = lambda theta: self.covo.give_covariance(theta)
+        elif self.mode=="RR":
+            from GP.tools import make_basis
+            # Construct the basis functions
+            if self.basis == "Rect":
+                from GP.basisfuncs import rectangular
+                self.Phip = make_basis.get_eigenvectors(self.xp, self.M, self.L, rectangular.phi)
+            else:
+                print "%s basis functions not supported yet" % self.basis
+
+            self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernel, mode=self.mode, Phi=self.Phi,
+                                              Phip=self.Phip, PhiTPhi=self.PhiTPhi, s=self.s,
+                                              prior_mean=self.prior_mean, grid_regular=self.grid_regular)
+            self.meanf = lambda theta: self.meano.give_mean(theta)
+            self.covo = posterior_covariance.covf(self.kernel, mode=self.mode, Phi=self.Phi, Phip=self.Phip,
+                                                  PhiTPhi=self.PhiTPhi, s=self.s, grid_regular=self.grid_regular)
+            self.covf = lambda theta: self.covo.give_covariance(theta)
+        else:
+            raise Exception('Mode %s not supported yet' % self.mode)
+
+
+    def set_posterior(self, theta, xp=None):
         """
         Set the posterior mean and covariance functions and compute the eigen-decomposition required to draw samples
         from it.
         :param theta: optimised value of hypers 
         """
-        if not self.has_posterior:
-            self.post_mean = self.meanf(theta).reshape(self.Np, 1)  # reshaping for compatibility with + in draw_samps
-            if self.mode == "Full":
-                # Get the posterior mean function
-                self.post_cov = self.covf(theta)
-                self.W, self.V = np.linalg.eigh(self.post_cov)
-                I = np.argwhere(self.W < 0.0)
-                self.W[I] = 0.0
-                self.sqrtW = np.nan_to_num(np.sqrt(np.nan_to_num(self.W))).reshape(self.Np, 1) # reshaping for compatibility with * in draw_samps
-            elif self.mode == "RR":
-                self.post_mean_coeffs = self.meano.give_RR_coeffs(theta)
-                self.post_cov_coeffs = self.covo.give_RR_covcoeffs(theta) #not computing this for memory sake
+        # reset mean and covriance functions
+        if xp is not None:
+            self.reset_targets(xp)
 
-            self.has_posterior = True
-        else:
-            print "Posterior has been set already"
+        self.post_mean = self.meanf(theta).reshape(self.Np, 1)  # reshaping for compatibility with + in draw_samps
+        if self.mode == "Full":
+            # Get the posterior mean function
+            self.post_cov = self.covf(theta)
+            self.W, self.V = np.linalg.eigh(self.post_cov)
+            I = np.argwhere(self.W < 0.0)
+            self.W[I] = 0.0
+            self.sqrtW = np.nan_to_num(np.sqrt(np.nan_to_num(self.W))).reshape(self.Np, 1) # reshaping for compatibility with * in draw_samps
+        elif self.mode == "RR":
+            self.post_mean_coeffs = self.meano.give_RR_coeffs(theta)
+            self.post_cov_coeffs = self.covo.give_RR_covcoeffs(theta) #not computing this for memory sake
+
+        self.has_posterior = True
 
 
     def draw_samps(self, Nsamps, theta, meanf=None, covf=None):
