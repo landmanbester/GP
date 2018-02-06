@@ -9,6 +9,8 @@ the kronecker product.
 
 import numpy as np
 from scipy import optimize as opt
+from GP.tools import abs_diff
+from GP.tools import kronecker_tools as kt
 
 class STGP(object):
     def __init__(self, t, x, tp, xp):
@@ -24,13 +26,13 @@ class STGP(object):
         self.M = self.T * self.N
 
         # get abs diff of spatial locs and evaluate cov func
-        self.XX = self.abs_diff_x(x, x, grid=False)
-        self.XXp = self.abs_diff_x(xp, x, mode=1, grid=False)
+        self.XX = abs_diff.abs_diff(x, x)
+        self.XXp = abs_diff.abs_diff(xp, x)
         # self.XXpp = self.abs_diff_x(xp, xp)
 
         # get abs diff of temporal locs and evaluate cov func
-        self.TT = self.abs_diff_t(t, t)
-        self.TTp = self.abs_diff_t(tp, t)
+        self.TT = abs_diff.abs_diff(t, t)
+        self.TTp = abs_diff.abs_diff(tp, t)
 
     # self.TTpp = self.abs_diff_t(tp, tp)
 
@@ -59,24 +61,15 @@ class STGP(object):
     def logp(self, theta, y):
         Kx = self.cov_func(theta[0:3], self.XX)
         Kt = self.cov_func(theta[3::], self.TT)
-        Lx = np.linalg.cholesky(Kx)
-        Lxinv = np.linalg.inv(Lx)
-        Kxinv = np.dot(Lxinv.T, Lxinv)
-        Lt = np.linalg.cholesky(Kt)
-        Ltinv = np.linalg.inv(Lt)
-        Ktinv = np.dot(Ltinv.T, Ltinv)
-        detKx = 2.0 * np.sum(np.log(np.diag(Lx)))
-        detKt = 2.0 * np.sum(np.log(np.diag(Lt)))
-        detK = self.T * detKx + self.N * detKt
-        Linv = np.kron(Lxinv, Ltinv)
-        Linvy = np.dot(Linv, y)
+        A = np.array([Kx, Kt])
+        L = kt.kron_cholesky(A)
+        Linv = kt.kron_inverse(L)
+        detK = kt.kron_det(L)
+        Linvy = kt.kron_vec(Linv, y)
         logp = np.dot(Linvy.T, Linvy) / 2.0 + detK / 2.0 + self.M * np.log(2 * np.pi) / 2.0
         # get the derivative w.r.t. theta
-        # tmp is Kinv
         Kinv = np.kron(Kxinv, Ktinv)
-        # tmp2 becomes Kinvy
         Kinvy = np.reshape(np.dot(Kinv, y), (self.M, 1))
-        # tmp2 becomes aaT
         aaT = np.dot(Kinvy, Kinvy.T)
         # tmp2 becomes Kinv - aaT
         tmp2 = Kinv - aaT
