@@ -47,7 +47,7 @@ class TemporalGP(object):
         if covariance_function=="sqexp":
             from GP.kernels import exponential_squared
             # Initialise kernel
-            self.kernel = exponential_squared.sqexp(Sigmay)
+            self.kernel = exponential_squared.sqexp(Sigmay=Sigmay)
         elif covariance_function=="mattern":
             from GP.kernels import mattern
             # Initialise kernel

@@ -13,7 +13,10 @@ class sqexp(object):
             print "Converting D to integer"
             D = int(D)
         self.D = D
-        self.Sigmay = Sigmay
+        if Sigmay is not None:
+            self.Sigmay = np.diag(Sigmay)
+        else:
+            self.Sigmay = None
 
 
     def cov_func(self, theta, x, noise=True):
