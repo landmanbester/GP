@@ -5,9 +5,10 @@ TODO: Generalise for arbitrary targets?
 """
 
 import numpy as np
+from GP.tools import kronecker_tools as kt
 
 class meanf(object):
-    def __init__(self, x, xp, y, kernel, mode="Full", prior_mean=None, XX=None, XXp=None, Phi=None, Phip=None, \
+    def __init__(self, x, xp, y, kernel, Sigmay=None, mode="Full", prior_mean=None, XX=None, XXp=None, Phi=None, Phip=None, \
                  PhiTPhi = None, s=None, grid_regular=False):
         """
         :param x: N x D vector of inputs
@@ -26,10 +27,16 @@ class meanf(object):
         """
         self.x = x
         self.xp = xp
-        self.N = x.shape[0]
-        self.Np = xp.shape[0]
+        if self.mode != "kron":
+            self.N = self.x.shape[0]
+            self.Np = xp.shape[0]
+        else:
+            self.N = kt.kron_N(self.x)
+            self.Np = kt.kron_N(self.xp)
+
         self.kernel = kernel
         self.mode = mode
+        self.Sigmay = Sigmay
         if prior_mean is None:
             self.yp = np.zeros([self.N, 1])
             self.fp = np.zeros([self.Np, 1])
@@ -37,7 +44,7 @@ class meanf(object):
             self.yp = (prior_mean(x)).reshape(self.N, 1)
             self.fp = (prior_mean(xp)).reshape(self.Np, 1)
         self.yDat = y - self.yp
-        if self.mode == "Full":
+        if self.mode == "Full" or self.mode == "kron":
             self.XX = XX
             self.XXp = XXp
         elif self.mode == "RR":
@@ -62,6 +69,25 @@ class meanf(object):
         elif self.mode == "RR":
             fcoeffs = self.give_RR_coeffs(theta)
             return self.fp + np.dot(self.Phip, fcoeffs)
+        elif self.mode == "Kron":
+            # get the Kronecker matrices
+            D = self.XX.shape[0]
+            Kp = []
+            K = []
+            for i in xrange(D):
+                Kp.append(self.kernel[0].cov_func(theta[i], self.XXp[i], noise=False))
+                K.append(self.kernel[0].cov_func(theta[i], self.XX[i], noise=False))
+            Kp = np.asarray(Kp)
+            K = np.asarray(K)
+            Qs, Lambdas = kt.kron_eig(K)
+            QsT = kt.kron_transpose(Qs)
+            alpha = kt.kron_matvec(QsT[::-1], self.yDat)
+            Lambda = kt.kron_diag(Lambdas)
+            if self.Sigmay is not None:
+                Lambda += self.Sigmay
+            alpha = alpha/Lambda[:, None]  # dot with diagonal inverse
+            alpha = kt.kron_matmat(Qs[::-1], alpha)
+            return kt.kron_matvec(Kp[::-1], alpha)
         else:
             raise Exception('Mode %s not supported yet'%self.mode)
 

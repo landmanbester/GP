@@ -3,9 +3,10 @@ Computes the marginal posterior (or evidence) of GPR needed to train the the hyp
 """
 
 import numpy as np
+from GP.tools import kronecker_tools as kt
 
 class evidence(object):
-    def __init__(self, x, y, kernel, mode="Full", prior_mean=None, XX=None, Phi=None, PhiTPhi=None, s=None, grid_regular=False):
+    def __init__(self, x, y, kernel, Sigmay=None, mode="Full", prior_mean=None, XX=None, Phi=None, PhiTPhi=None, s=None, grid_regular=False):
         """
         :param x: inputs
         :param y: Nx1 vector of data 
@@ -20,7 +21,11 @@ class evidence(object):
         self.x = x
         self.kernel = kernel
         self.mode = mode
-        self.N = self.x.shape[0]
+        if self.mode != "kron":
+            self.N = self.x.shape[0]
+        else:
+            self.N = kt.kron_N(self.x)
+        self.Sigmay = Sigmay
         if prior_mean is None:
             yp = np.zeros([self.N, 1])
         else:
@@ -135,5 +140,32 @@ class evidence(object):
             logp = (yTQinvy + logQ + self.N * np.log(2 * np.pi)) / 2.0
             dlogp = (dlogQdtheta + dyTQinvydtheta) / 2
             return logp, dlogp
+        elif self.mode == "kron":
+            # get the Kronecker matrices
+            D = self.XX.shape[0]
+            K = []
+            for i in xrange(D):
+                K.append(self.kernel[0].cov_func(theta[i], self.XX[i], noise=False))
+            K = np.asarray(K)
+            # do eigen-decomposition
+            Qs, Lambdas = kt.kron_eig(K)
+            QsT = kt.kron_transpose(Qs)
+            # get alpha vector
+            alpha = kt.kron_matvec(QsT[::-1], self.yDat)
+            Lambda = kt.kron_diag(Lambdas)
+            if self.Sigmay is not None:
+                Lambda += self.Sigmay
+            alpha = alpha / Lambda[:, None]  # dot with diagonal inverse
+            alpha = kt.kron_matmat(Qs[::-1], alpha)
+            # get negalive log marginal likelihood
+            logp = 0.5*(self.yDat.T.dot(alpha) + np.sum(Lambda) + self.N*np.log(2.0*np.pi))
+            # get derivatives
+            Ntheta = theta.size
+            dKdtheta = []
+            for i in xrange(Ntheta):
+                dKdtheta.append(self.kernel.dcov_func(theta[i], self.XX[i], K[i]))
+
+
+            return logp
         else:
             raise Exception('Mode %s not supported yet' % self.mode)
