@@ -31,10 +31,10 @@ class evidence(object):
         else:
             yp = prior_mean(x).reshape(self.N, 1)
         self.yDat = y.reshape(self.N, 1) - yp
-        self.yTy = np.dot(self.yDat.T, self.yDat)
-        if self.mode == "Full":
+        if self.mode == "Full" or self.mode == "kron":
             self.XX = XX
         elif self.mode == "RR":
+            self.yTy = np.dot(self.yDat.T, self.yDat)
             self.s = s
             self.M = PhiTPhi.shape[0]
             self.Phi = Phi
@@ -46,7 +46,7 @@ class evidence(object):
 
     def logL(self, theta):
         """
-        Computes the negative log marginal posterior (hopefully in a way that saves memory?)
+        Computes the negative log marginal posterior
         :param theta: hypers 
         :return logp, dlogp: the negative log marginal posterior and its derivative w.r.t. hypers
         """
@@ -141,31 +141,117 @@ class evidence(object):
             dlogp = (dlogQdtheta + dyTQinvydtheta) / 2
             return logp, dlogp
         elif self.mode == "kron":
-            # get the Kronecker matrices
+            # get dims
             D = self.XX.shape[0]
+            # broadcast theta (sigmaf and sigman is a shared hyperparameter but easiest to deal with this way)
+            thetan = np.zeros([D, 3])
+            thetan[:, 0] = theta[0]
+            thetan[:, -1] = theta[-1]
+            for i in xrange(D): # this is how many length scales will be involved in te problem
+                thetan[i, 1] = theta[i+1] # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
+            # get the Kronecker matrices
             K = []
             for i in xrange(D):
-                K.append(self.kernel[0].cov_func(theta[i], self.XX[i], noise=False))
+                K.append(self.kernel[i].cov_func(thetan[i], self.XX[i], noise=False))
             K = np.asarray(K)
             # do eigen-decomposition
-            Qs, Lambdas = kt.kron_eig(K)
+            Lambdas, Qs = kt.kron_eig(K)
             QsT = kt.kron_transpose(Qs)
             # get alpha vector
             alpha = kt.kron_matvec(QsT[::-1], self.yDat)
             Lambda = kt.kron_diag(Lambdas)
             if self.Sigmay is not None:
-                Lambda += self.Sigmay
-            alpha = alpha / Lambda[:, None]  # dot with diagonal inverse
-            alpha = kt.kron_matmat(Qs[::-1], alpha)
-            # get negalive log marginal likelihood
-            logp = 0.5*(self.yDat.T.dot(alpha) + np.sum(Lambda) + self.N*np.log(2.0*np.pi))
+                Lambda += theta[-1]**2*kt.kron_diag(self.Sigmay)  # absorb weights into Lambdas
+            else:
+                Lambda += theta[-1] ** 2 * np.ones(self.N)
+            alpha = alpha / Lambda  # same as matrix product with inverse of diagonal
+            alpha = kt.kron_matvec(Qs[::-1], alpha)
+            # get negative log marginal likelihood
+            logp = 0.5*(self.yDat.T.dot(alpha) + np.sum(np.log(Lambda)) + self.N*np.log(2.0*np.pi))
             # get derivatives
-            Ntheta = theta.size
             dKdtheta = []
-            for i in xrange(Ntheta):
-                dKdtheta.append(self.kernel.dcov_func(theta[i], self.XX[i], K[i]))
+            # first w.r.t. sigmaf which only needs to be done once and will have same shape as K
+            dKdtheta.append(self.kernel[0].dcov_func(thetan[0], self.XX, K, mode='sigmaf')) # doesn't matter which theta/kernel we pass because we have already evaluated K
+            # now get w.r.t. length scales
+            for i in xrange(D): # one length scale for each dimension
+                dKdtheta.append(self.kernel[i].dcov_func(thetan[i], self.XX[i], K[i], mode='l')) # here it does matter, will be of shape K[i]
+            # finally get deriv w.r.t sigman (also only need to do this once)
+            dKdtheta.append(self.kernel[0].dcov_func(thetan[0], self.XX, K, mode='sigman')) # ditto remark for theta, will be of shape Sigmay
+            dKdtheta = np.asarray(dKdtheta) # should contain Ntheta arrays
+            # compute dZdtheta
+            Ntheta = theta.size
+            dlogp = np.zeros(Ntheta)
+            # first get it for sigmaf
+            gamma = []
+            for i in xrange(D):
+                tmp = dKdtheta[0][i].dot(Qs[i])
+                gamma.append(np.einsum('ij,ji->i', Qs[i].T, tmp))
+            gamma = np.asarray(gamma)
+            gamma = kt.kron_diag(gamma)
+            kappa = kt.kron_matvec(dKdtheta[0][::-1], alpha)
+            dlogp[0] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
+            # now get it for the length scales
+            for i in xrange(1, D+1): # i labels length scales
+                # compute the gammas = diag(Qd.T dKddthetai Qd)
+                gamma = []
+                for j in xrange(D): # j labels dimensions
+                    if j == i - 1: # dimension corresponding to l_i is always one less than the index of the length scale
+                        tmp = dKdtheta[i].dot(Qs[j]) # this is the dKdtheta corresponding to l_i
+                    else:
+                        tmp = K[j].dot(Qs[j])
+                    gamma.append(np.einsum('ij,ji->i', Qs[j].T, tmp))  # computes only the diagonal of the product
+                gamma = np.asarray(gamma)
+                gamma = kt.kron_diag(gamma) # exploiting diagonal property of Kronecker product
+                dKdtheta_tmp = K.copy()
+                dKdtheta_tmp[i-1] = dKdtheta[i]  # can be made more efficient, just set for clarity
+                kappa = kt.kron_matvec(dKdtheta_tmp[::-1], alpha)
+                dlogp[i] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
 
-
-            return logp
+            # finally get it for sigman
+            gamma = []
+            for i in xrange(D):
+                tmp = dKdtheta[-1][i][:, None]*Qs[i]
+                gamma.append(np.einsum('ij,ji->i', Qs[i].T, tmp))
+            gamma = np.asarray(gamma)
+            gamma = kt.kron_diag(gamma)
+            kappa = kt.kron_diag(dKdtheta[-1])*alpha
+            dlogp[-1] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
+            #print theta, logp, dlogp
+            #print self.get_full_derivs(K, dKdtheta, alpha, theta[-1]**2*np.eye(self.N), self.yDat)
+            return logp, dlogp
         else:
             raise Exception('Mode %s not supported yet' % self.mode)
+
+    def get_dZdthetai(self, alpha, kappa, Lambda, gamma):
+        return 0.5*alpha.dot(kappa) - 0.5*sum(gamma/Lambda)
+
+    def get_full_derivs(self, K, dKdtheta, alpha, Lambda, y):
+        Kfull = kt.kron_kron(K)
+        Kyfull = Kfull + Lambda
+        s, logdet = np.linalg.slogdet(Kyfull)
+        if s < 0.0:
+            raise
+        # Lambda, Q = np.linalg.eigh(Kyfull)
+        # logdet = np.sum(np.log(Lambda))
+        logp = 0.5*y.T.dot(np.linalg.solve(Kyfull, y)) + 0.5*logdet*s + self.N*np.log(2.0*np.pi)/2.0
+        dlogp = np.zeros(4)
+        dKdthetafull = kt.kron_kron(dKdtheta[0])
+        dlogp[0] = 0.5*np.trace(np.linalg.solve(Kyfull, dKdthetafull)) - 0.5*alpha.dot(dKdthetafull.dot(alpha))
+
+        dKdthetafull = K.copy()
+        dKdthetafull[0] = dKdtheta[1]
+        dKdthetafull = kt.kron_kron(dKdthetafull)
+        dlogp[1] = 0.5 * np.trace(np.linalg.solve(Kyfull, dKdthetafull)) - 0.5 * alpha.dot(dKdthetafull.dot(alpha))
+
+        dKdthetafull = K.copy()
+        dKdthetafull[1] = dKdtheta[2]
+        dKdthetafull = kt.kron_kron(dKdthetafull)
+        dlogp[2] = 0.5 * np.trace(np.linalg.solve(Kyfull, dKdthetafull)) - 0.5 * alpha.dot(dKdthetafull.dot(alpha))
+
+        dKdthetafull = dKdtheta[-1]
+        dKdthetafull = kt.kron_diag_diag(dKdthetafull)
+        dlogp[-1] = 0.5 * np.trace(np.linalg.solve(Kyfull, dKdthetafull)) - 0.5 * alpha.dot(dKdthetafull.dot(alpha))
+
+        return logp, dlogp
+
+

@@ -27,6 +27,7 @@ class meanf(object):
         """
         self.x = x
         self.xp = xp
+        self.mode = mode
         if self.mode != "kron":
             self.N = self.x.shape[0]
             self.Np = xp.shape[0]
@@ -43,7 +44,7 @@ class meanf(object):
         else:
             self.yp = (prior_mean(x)).reshape(self.N, 1)
             self.fp = (prior_mean(xp)).reshape(self.Np, 1)
-        self.yDat = y - self.yp
+        self.yDat = y.reshape(self.N, 1) - self.yp
         if self.mode == "Full" or self.mode == "kron":
             self.XX = XX
             self.XXp = XXp
@@ -69,25 +70,33 @@ class meanf(object):
         elif self.mode == "RR":
             fcoeffs = self.give_RR_coeffs(theta)
             return self.fp + np.dot(self.Phip, fcoeffs)
-        elif self.mode == "Kron":
-            # get the Kronecker matrices
+        elif self.mode == "kron":
             D = self.XX.shape[0]
+            # broadcast theta (sigmaf and sigman is a shared hyperparameter but easiest to deal with this way)
+            thetan = np.zeros([D, 3])
+            thetan[:, 0] = theta[0]
+            thetan[:, -1] = theta[-1]
+            for i in xrange(D): # this is how many length scales will be involved in te problem
+                thetan[i, 1] = theta[i+1] # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
+            # get the Kronecker matrices
             Kp = []
             K = []
             for i in xrange(D):
-                Kp.append(self.kernel[0].cov_func(theta[i], self.XXp[i], noise=False))
-                K.append(self.kernel[0].cov_func(theta[i], self.XX[i], noise=False))
+                Kp.append((self.kernel[i].cov_func(thetan[i], self.XXp[i], noise=False)).T)
+                K.append(self.kernel[i].cov_func(thetan[i], self.XX[i], noise=False))
             Kp = np.asarray(Kp)
             K = np.asarray(K)
-            Qs, Lambdas = kt.kron_eig(K)
+            Lambdas, Qs = kt.kron_eig(K)
             QsT = kt.kron_transpose(Qs)
             alpha = kt.kron_matvec(QsT[::-1], self.yDat)
             Lambda = kt.kron_diag(Lambdas)
             if self.Sigmay is not None:
-                Lambda += self.Sigmay
-            alpha = alpha/Lambda[:, None]  # dot with diagonal inverse
-            alpha = kt.kron_matmat(Qs[::-1], alpha)
-            return kt.kron_matvec(Kp[::-1], alpha)
+                Lambda += theta[-1]**2*kt.kron_diag(self.Sigmay)  # absorb weights into Lambdas
+            else:
+                Lambda += theta[-1] ** 2 * np.ones(self.N)
+            alpha = alpha/Lambda  # dot with diagonal inverse
+            alpha = kt.kron_matvec(Qs[::-1], alpha)
+            return kt.kron_tensorvec(Kp[::-1], alpha)
         else:
             raise Exception('Mode %s not supported yet'%self.mode)
 
