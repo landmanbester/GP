@@ -325,30 +325,54 @@ if __name__=="__main__":
     # K2 = Q2.dot(np.dot(np.diag(Lambda2), Q2.T))
     # print "K diff from eigen decomp = ", np.abs(K - K2).max()
 
-    # test tensorvec
-    Nxp = 10
-    xp = np.linspace(-1, 1, Nxp)
-    xxp = abs_diff.abs_diff(x, xp)
-    Kpx = (kernel.cov_func(thetax, xxp, noise=False)).T
+    # # test tensorvec
+    # Nxp = 10
+    # xp = np.linspace(-1, 1, Nxp)
+    # xxp = abs_diff.abs_diff(x, xp)
+    # Kpx = (kernel.cov_func(thetax, xxp, noise=False)).T
+    #
+    # Ntp = 12
+    # tp = np.linspace(0, 1, Ntp)
+    # ttp = abs_diff.abs_diff(t, tp)
+    # Kpt = (kernel.cov_func(thetat, ttp, noise=False)).T
+    #
+    # Nzp = 14
+    # zp = np.linspace(0, 1, Nzp)
+    # zzp = abs_diff.abs_diff(z, zp)
+    # Kpz = (kernel.cov_func(thetaz, zzp, noise=False)).T
+    #
+    # Ap = np.array([Kpt, Kpx, Kpz])  # note ordering!!!
+    # Kp = np.kron(Kpz, np.kron(Kpx, Kpt))
+    #
+    # print Ap.shape, Kp.shape
+    #
+    # res1 = Kp.dot(b)
+    #
+    # print res1.shape
+    # res2 = kron_tensorvec(Ap, b)
+    # print "Kp diff = ", np.abs(res1 - res2).max()
 
-    Ntp = 12
-    tp = np.linspace(0, 1, Ntp)
-    ttp = abs_diff.abs_diff(t, tp)
-    Kpt = (kernel.cov_func(thetat, ttp, noise=False)).T
+    # test eigen-decomposition with diagonal noise
+    # first get full eigen-decomposition
+    Sigmay = 0.1*np.eye(N) + np.diag(np.abs(0.1*np.random.randn(N)))
+    Ky = K + Sigmay
+    Kyinv = np.linalg.inv(Ky)
+    #Lambda, Q = np.linalg.eigh(Ky)
 
-    Nzp = 14
-    zp = np.linspace(0, 1, Nzp)
-    zzp = abs_diff.abs_diff(z, zp)
-    Kpz = (kernel.cov_func(thetaz, zzp, noise=False)).T
+    # compute eigendecomp with shortened Woodbury matrix identity
+    Lambda, Q = np.linalg.eigh(K)
+    #from GP.tools import FFT_tools as FT
+    #row2 = np.append(K[0, :], K[0, np.arange(N)[1:-1][::-1]].conj())
+    #Lambda2 = np.fft.fft(row2).real
+    Kyinv2 = Q.dot(np.linalg.inv(np.diag(Lambda) + Sigmay).dot(Q.T))
 
-    Ap = np.array([Kpt, Kpx, Kpz])  # note ordering!!!
-    Kp = np.kron(Kpz, np.kron(Kpx, Kpt))
+    print "Ky diff 1 = ", np.abs(Kyinv - Kyinv2).max()
 
-    print Ap.shape, Kp.shape
+    # compute Ky with full Woodbury matrix identity
+    Sigmayinv = np.diag(1.0/np.diag(Sigmay))
+    QTSigmayinvQ =  Q.T.dot(Sigmayinv.dot(Q))
+    Kyinv3 = Sigmayinv - Sigmayinv.dot(Q.dot(np.linalg.inv(np.diag(1.0/Lambda) + Q.T.dot(Sigmayinv.dot(Q))).dot(Q.T.dot(Sigmayinv))))
 
-    res1 = Kp.dot(b)
+    print "Ky diff 2 = ", np.abs(Kyinv - Kyinv3).max()
 
-    print res1.shape
-    res2 = kron_tensorvec(Ap, b)
-    print "Kp diff = ", np.abs(res1 - res2).max()
 

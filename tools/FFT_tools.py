@@ -12,12 +12,9 @@ def FFT_circvec(c, x):
     :param x: the vector to multiply with
     :return: y the result
     """
-    #Lambda = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(c)))
-    #xk = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(x)))
-    #return np.fft.ifftshift(np.fft.ifft(np.fft.fftshift(xk * Lambda)))
-    Lambda = np.fft.fft(np.fft.ifftshift(c), norm="ortho")
-    xk = np.fft.fft(np.fft.ifftshift(x), norm="ortho")
-    return np.fft.ifft(np.fft.fftshift(xk * Lambda), norm="ortho")
+    Lambda = np.fft.rfft(c)
+    xk = np.fft.rfft(x)
+    return np.fft.irfft(Lambda*xk)
 
 
 def FFT_toepvec(t, x):
@@ -29,9 +26,10 @@ def FFT_toepvec(t, x):
     :return: y the result
     """
     # broadcast to circulant
-    c = np.append(t, np.append(np.zeros(1), t[np.arange(Nx)[0:-1][::-1]].conj()))
-    x_aug = np.append(x, np.zeros(x.size))
-    return FFT_circvec(c, x_aug)[0:x.size]
+    c = np.append(t, t[np.arange(Nx)[1:-1][::-1]].conj())
+    x_aug = np.append(x, np.zeros(x.size-2))
+    tmp = FFT_circvec(c, x_aug)
+    return tmp[0:x.size]
 
 
 if __name__=="__main__":
@@ -40,9 +38,9 @@ if __name__=="__main__":
 
     # get Toeplitz matrix
     kernel = exponential_squared.sqexp()
-    Nx = 100
+    Nx = 1024
     thetax = np.array([0.25, 0.25])
-    x = np.linspace(-1, 1, Nx)
+    x = np.linspace(-10, 10, Nx)
     xx = abs_diff.abs_diff(x, x)
     Kx = kernel.cov_func(thetax, xx, noise=False)
 
@@ -54,30 +52,47 @@ if __name__=="__main__":
 
     row3 = np.fft.ifft(np.fft.fft(row1, norm='ortho'), norm='ortho')
 
-    print np.abs(row3 - row1).max()
+    print "FFT test diff = ", np.abs(row3 - row1).max()
 
     # compare eigenvalues to fft coefficients
     import scipy.linalg as scl
+
+    row2 = np.append(Kx[0, :], Kx[0, np.arange(Nx)[1:-1][::-1]].conj())
     Kcirc = scl.circulant(row2)
+
+    t = np.random.randn(row2.size)
+    res1 = Kcirc.dot(t)
+    res2 = FFT_circvec(row2, t)
+    print "Circvec diff =", np.abs(res1 - res2).max()
+
     Lambda, Q = np.linalg.eigh(Kcirc)
 
-    Lambda2 = np.abs(np.fft.rfft(row2))
+    Lambda2 = np.fft.fft(row2).real
 
-    Lambda = np.sort(Lambda)
-    Lambda2 = np.sort(Lambda2)
+    # get the eigenvectors (they must be the roots of unity
 
-    print np.abs(Lambda - Lambda2).max()
+    #Lambda = np.sort(Lambda)
+    #Lambda2 = np.sort(Lambda2)
+
+    #print "Eig diff = ", np.abs(Lambda - Lambda2).max(), np.abs(Lambda - Lambda2).min()
 
 
     # test circvec
-    t = np.sin(2*np.pi*x)
-    res1 = np.dot(Kx, t)
+    res1 = np.dot(Kx, t[0:Nx])
 
-    res2 = FFT_toepvec(Kx[0, :], x)
+    res2 = FFT_toepvec(Kx[0, :], t[0:Nx])
     print "Toepvec diff = ", np.abs(res1 - res2).max()
 
-    # import matplotlib.pyplot as plt
-    #
-    # plt.figure('Spectrum')
-    # plt.plot(Lambda)
-    # plt.show()
+    import matplotlib.pyplot as plt
+
+    plt.figure('Toepvec Diff ')
+    plt.plot(res1 - res2)
+    plt.figure('Spectra 1')
+    plt.plot(Lambda, 'x')
+    plt.figure("Spectra 2")
+    plt.plot(Lambda2, 'x')
+    plt.show()
+
+
+
+
