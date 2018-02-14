@@ -29,6 +29,8 @@ class KronGP(object):
         self.y = y
         if Sigmay is not None:
             self.Sigmay = Sigmay
+            #self.ytransformed = y.copy()/np.sqrt(Sigmay)
+            #print "Set y"
         else:
             self.Sigmay = None
         self.covariance_function = covariance_function
@@ -48,9 +50,11 @@ class KronGP(object):
         # set the kernels
         from GP.kernels import exponential_squared  # only using this one for now
         self.kernels = []
+        self.kernels_transformed = []
         for i in xrange(self.D):
             if self.Sigmay is not None:
                 self.kernels.append(exponential_squared.sqexp(Sigmay=self.Sigmay[i], mode='kron'))
+                #self.kernels_transformed.append(exponential_squared.sqexp(mode='kron'))
             else:
                 self.kernels.append(exponential_squared.sqexp(mode='kron'))
 
@@ -62,6 +66,16 @@ class KronGP(object):
         self.covf = lambda theta: self.covo.give_covariance(theta)
         self.logpo = marginal_posterior.evidence(self.x, self.y, self.kernels, mode="kron", XX=self.XX)
         self.logp = lambda theta: self.logpo.logL(theta)
+
+        # if self.Sigmay is not None:
+        #     # Instantiate posterior mean, cov and evidence classes
+        #     self.meanot = posterior_mean.meanf(self.x, self.xp, self.ytransformed, self.kernels_transformed, mode="kron",
+        #                                       XX=self.XX, XXp=self.XXp)
+        #     self.meanft = lambda theta: self.meanot.give_mean(theta)
+        #     self.covot = posterior_covariance.covf(self.kernels_transformed, mode="kron", XX=self.XX, XXp=self.XXp, XXpp=self.XXpp)
+        #     self.covft = lambda theta: self.covot.give_covariance(theta)
+        #     self.logpot = marginal_posterior.evidence(self.x, self.ytransformed, self.kernels_transformed, mode="kron", XX=self.XX)
+        #     self.logpt = lambda theta: self.logpot.logL(theta)
 
     def train(self, theta0, bounds=None):
         """
@@ -91,21 +105,49 @@ class KronGP(object):
         # Return optimised value of theta
         return theta
 
+    def train_transformed(self, theta0, bounds=None):
+        """
+        Trains the hypers using built in scipy optimizer
+        :param theta0: initial guess for hypers
+        :param bounds: optional set min and max bounds on hypers
+        :return: the optimised hyperparameters
+        """
+        if bounds is None:
+            Ntheta = theta0.size
+            bnds = []
+            for i in xrange(Ntheta):
+                bnds.append((1e-6, None))
+            # Set default bounds for hypers (they must be strictly positive)
+            bnds = tuple(bnds)
+        else:
+            bnds = bounds # make sure above criteria on bounds satisfied if passing default bounds
+
+        # Do optimisation
+        thetap = opt.fmin_l_bfgs_b(self.logpt, theta0, fprime=None, bounds=bnds) #, approx_grad=True) #, factr=1e10, pgtol=0.1)
+
+        theta = thetap[0]
+
+        #Check for convergence
+        if thetap[2]["warnflag"]:
+            print "Warning flag raised"
+        # Return optimised value of theta
+        return theta
+
 
 def func(nu, t, sigma):
     return 5*np.sinc(nu)*5*np.sinc(t) + sigma*np.random.randn(int(np.sqrt(nu.size)), int(np.sqrt(t.size)))
 
-if __name__=="__main__":
+if __name__ == "__main__":
     # generate some data
     Nnu = 100
     numax = 5.0
     nu = np.linspace(-numax, numax, Nnu)
-    Nnup = 500
+    Nnup = 100
     nup = np.linspace(-numax, numax, Nnup)
 
     Nt = 100
     t = np.linspace(-numax, numax, Nt)
-    Ntp = 500
+    Ntp = 100
     tp = np.linspace(-numax, numax, Ntp)
 
     nunu, tt = np.meshgrid(nu, t)
@@ -121,6 +163,7 @@ if __name__=="__main__":
     fp = func(nunup, ttp, 0.0)
 
     # create GP object
+    print "Doing unweighted GP"
     GP = KronGP(x, xp, y)
 
     # set hypers
@@ -131,7 +174,29 @@ if __name__=="__main__":
     theta0 = np.array([sigmaf, l1, l2, sigman])
     theta = GP.train(theta0)
 
-    fmean = GP.meanf(theta)
+    print "Training"
+    fmean = GP.meanf(theta).reshape(nunup.shape)
+
+    # do for transformed data
+    N = Nnu*Nt
+    Sigmay = 0.1 * np.ones([Nnu, Nt]) + np.abs(0.1 * np.random.randn(Nnu, Nt))
+
+    #print "Simulating weighted noise"
+    #Noise = np.reshape(np.random.multivariate_normal(np.zeros(N), np.diag(Sigmay.flatten())), (Nnu, Nt))
+
+    # y2 = func(nunu, tt, Sigmay)
+    #
+    # print "Doing weighted GP"
+    # GP = KronGP(x, xp, y, Sigmay=Sigmay)
+    #
+    # print "Training"
+    # theta2 = GP.train_transformed(theta0)
+    #
+    # fmean2 = GP.meanft(theta).reshape(nunup.shape)
+    #
+    # print fmean2/fmean
+
+
 
     # plot expected result
     import matplotlib.pyplot as plt
@@ -142,9 +207,14 @@ if __name__=="__main__":
     plt.imshow(fp)
     plt.colorbar()
     plt.figure('fp')
-    plt.imshow(fmean.reshape(nunup.shape))
+    plt.imshow(fmean)
     plt.colorbar()
-
+    # plt.figure('Data2')
+    # plt.imshow(GP.ytransformed)
+    # plt.colorbar()
+    # plt.figure('fp2')
+    # plt.imshow(fmean2)
+    # plt.colorbar()
     plt.show()
 
 
