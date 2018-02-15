@@ -27,7 +27,7 @@ def FFT_circmat(c, x):
     Lambda = np.fft.rfft(c)
     y = np.zeros([c.size, x.shape[1]])
     for i in xrange(x.shape[1]):
-        xk = np.fft.rfft(x)
+        xk = np.fft.rfft(x[:, i])
         y[:, i] = np.fft.irfft(Lambda*xk)
     return y
 
@@ -57,9 +57,9 @@ def FFT_toepmat(t, x):
     # broadcast to circulant
     N, M = x.shape
     c = np.append(t, t[np.arange(N)[1:-1][::-1]].conj())
-    x_aug = np.append(x, np.zeros([N-2, M]))
+    x_aug = np.append(x, np.zeros([N-2, M]), axis=0)
     tmp = FFT_circmat(c, x_aug)
-    return tmp[0:x.size, :]
+    return tmp[0:N, :]
 
 if __name__=="__main__":
     from GP.tools import abs_diff

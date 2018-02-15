@@ -14,6 +14,7 @@ covariance function is a tensor product kernel i.e. when it can be written as th
 """
 
 import numpy as np
+import FFT_tools as ft
 
 def kron_N(x):
     """
@@ -109,6 +110,42 @@ def kron_matvec(A, b):
         x = Z.flatten()
     return x
 
+def kron_matvec_op(A, b, D):
+    """
+    Computes matrix vector product of kronecker matrix in linear time. 
+    :param A: an array of arrays holding matrices [..., K3, K2, K1] (note ordering)
+    :param b: the RHS vector
+    :return: A.dot(b)
+    """
+    N = b.size
+    x = b
+    for d in np.arange(D)[::-1]:
+        Gd = A[d].K.shape[0]
+        X = np.reshape(x,(Gd, N//Gd))
+        Z = np.einsum("ab,bc->ac", A[d].K, X)
+        Z = np.einsum("ab -> ba", Z)
+        x = Z.flatten()
+    return x
+
+def kron_toep_matvec(A, b, Ntot, D):
+    """
+    Computes matrix vector product of kronecker matrix operator in linear time. 
+    :param A: a list of covariance function operators [..., K3, K2, K1] (note ordering)
+    :param b: the RHS vector
+    :return: x = A.dot(b)
+    """
+    # # need to do these checks somehow
+    # D = A.D
+    # N = A.N
+    # assert N == b.size
+    x = b
+    for d in np.arange(D)[::-1]:
+        Gd = A[d].N
+        X = np.reshape(x, (Gd, Ntot//Gd))
+        Z = A[d].matmat(X)
+        x = Z.T.flatten()
+    return x
+
 def kron_matmat(A, B):
     """
     Computes the product of two kronecker matrices
@@ -128,6 +165,23 @@ def kron_matmat(A, B):
     C = np.zeros([N, M])
     for i in xrange(M):
         C[:,i] = kron_matvec(A, K[:,i])
+    return C
+
+def kron_toep_matmat(A, B, Ntot, D):  # to test
+    """
+    Computes the product of two kronecker matrices
+    :param A: 
+    :param B: 
+    :return: 
+    """
+    D = B.shape[0]
+    K = kron_kron(B)
+    M = K.shape[1]  # the product of Np_1 x Np_2 x ... x Np_3
+
+    # do kron_matvec on each column of result
+    C = np.zeros([Ntot, M])
+    for i in xrange(M):
+        C[:,i] = kron_toep_matvec(A, K[:,i])
     return C
 
 def kron_trace(A):
@@ -252,38 +306,78 @@ if __name__=="__main__":
 
 
     kernel = exponential_squared.sqexp()
-    Nx = 7
-    thetax = np.array([0.25, 0.25])
+    Nx = 500
+    sigmaf = 1.0
+    lx = 0.25
+    thetax = np.array([sigmaf, lx])
     x = np.linspace(-1, 1, Nx)
     xx = abs_diff.abs_diff(x, x)
     Kx = kernel.cov_func(thetax, xx, noise=False)
 
-    Nt = 9
-    thetat = np.array([1.0, 1.0])
+    Nt = 500
+    lt = 1.0
+    thetat = np.array([sigmaf, lt])
     t = np.linspace(0, 1, Nt)
     tt = abs_diff.abs_diff(t, t)
     Kt = kernel.cov_func(thetat, tt, noise=False)
 
-    Nz = 11
-    thetaz = np.array([1.5, 1.5])
+    Nz = 500
+    lz = 1.5
+    thetaz = np.array([sigmaf, lz])
     z = np.linspace(0, 1, Nz)
     zz = abs_diff.abs_diff(z, z)
     Kz = kernel.cov_func(thetaz, zz, noise=False)
 
     N = Nx * Nt * Nz
+    print N
     b = np.random.randn(N)
 
-    K = np.kron(Kz, np.kron(Kx, Kt))
-    A = np.array([Kt, Kx, Kz])  # note ordering!!!
+    #K = np.kron(Kz, np.kron(Kx, Kt))
+    #A = np.array([Kt, Kx, Kz])  # note ordering!!!
 
     # # test kron_kron
     # K2 = kron_kron(A[::-1])
     # print "kron diff = ", np.abs(K - K2).max()
     #
-    # # test matvec
-    # res1 = np.dot(K, b)
-    # res2 = kron_matvec(A, b)
-    # print "matvec diff = ", np.abs(res1 - res2).max()
+    # test matvec
+    #res1 = np.dot(K, b)
+    #res2 = kron_matvec(A, b)
+    #print "matvec diff = ", np.abs(res1 - res2).max()
+
+    from GP.operators import covariance_ops
+    X = np.array([t, x, z])
+    sigman = 0.1
+    theta0 = np.array([sigmaf, lt, lx, lz, sigman])
+    Kop = covariance_ops.K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], grid_regular=True)
+
+    # res1 = Kop(b)
+    #
+    # res2 = kron_matvec(A[::-1], b)
+    #
+    # print "Kop matvec diff = ", np.abs(res1 - res2).max()
+
+    # test Ky_op
+    Sigmay = 0.1 * np.ones(N) + np.abs(0.1 * np.random.randn(N))
+    #Kymat = K + sigman**2*np.diag(Sigmay)
+
+    Kyop = covariance_ops.Ky_op(Kop, Sigmay)
+
+    #res1 = Kymat.dot(b)
+
+    #res2 = Kyop(b)
+
+    #print "Kyop matvec diff = ", np.abs(res1 - res2).max()
+
+    # test Ky.idot
+    #print "Doing explicit inverse"
+    #res1 = np.linalg.solve(Kymat, b)
+    #Ainv = kron_inverse(A)
+    #print "Doing full inverse"
+    #res1 = kron_matvec(Ainv[::-1], b)
+    print "Doing approximate inverse"
+    res2 = Kyop.idot(b)
+
+    print "Kyop.idot diff = ", res2.max() #np.abs(res1 - res2).max()
     #
     # # test matmat
     # A2 = np.array([Kt + np.random.randn(Nt, Nt), Kx + np.random.randn(Nx, Nx), Kz + np.random.randn(Nz, Nz)])
@@ -354,25 +448,25 @@ if __name__=="__main__":
 
     # test eigen-decomposition with diagonal noise
     # first get full eigen-decomposition
-    Sigmay = 0.1*np.eye(N) + np.diag(np.abs(0.1*np.random.randn(N)))
-    Ky = K + Sigmay
-    Kyinv = np.linalg.inv(Ky)
-    #Lambda, Q = np.linalg.eigh(Ky)
-
-    # compute eigendecomp with shortened Woodbury matrix identity
-    Lambda, Q = np.linalg.eigh(K)
-    #from GP.tools import FFT_tools as FT
-    #row2 = np.append(K[0, :], K[0, np.arange(N)[1:-1][::-1]].conj())
-    #Lambda2 = np.fft.fft(row2).real
-    Kyinv2 = Q.dot(np.linalg.inv(np.diag(Lambda) + Sigmay).dot(Q.T))
-
-    print "Ky diff 1 = ", np.abs(Kyinv - Kyinv2).max()
-
-    # compute Ky with full Woodbury matrix identity
-    Sigmayinv = np.diag(1.0/np.diag(Sigmay))
-    QTSigmayinvQ =  Q.T.dot(Sigmayinv.dot(Q))
-    Kyinv3 = Sigmayinv - Sigmayinv.dot(Q.dot(np.linalg.inv(np.diag(1.0/Lambda) + Q.T.dot(Sigmayinv.dot(Q))).dot(Q.T.dot(Sigmayinv))))
-
-    print "Ky diff 2 = ", np.abs(Kyinv - Kyinv3).max()
+    # Sigmay = 0.1*np.eye(N) + np.diag(np.abs(0.1*np.random.randn(N)))
+    # Ky = K + Sigmay
+    # Kyinv = np.linalg.inv(Ky)
+    # #Lambda, Q = np.linalg.eigh(Ky)
+    #
+    # # compute eigendecomp with shortened Woodbury matrix identity
+    # Lambda, Q = np.linalg.eigh(K)
+    # #from GP.tools import FFT_tools as FT
+    # #row2 = np.append(K[0, :], K[0, np.arange(N)[1:-1][::-1]].conj())
+    # #Lambda2 = np.fft.fft(row2).real
+    # Kyinv2 = Q.dot(np.linalg.inv(np.diag(Lambda) + Sigmay).dot(Q.T))
+    #
+    # print "Ky diff 1 = ", np.abs(Kyinv - Kyinv2).max()
+    #
+    # # compute Ky with full Woodbury matrix identity
+    # Sigmayinv = np.diag(1.0/np.diag(Sigmay))
+    # QTSigmayinvQ =  Q.T.dot(Sigmayinv.dot(Q))
+    # Kyinv3 = Sigmayinv - Sigmayinv.dot(Q.dot(np.linalg.inv(np.diag(1.0/Lambda) + Q.T.dot(Sigmayinv.dot(Q))).dot(Q.T.dot(Sigmayinv))))
+    #
+    # print "Ky diff 2 = ", np.abs(Kyinv - Kyinv3).max()
 
 

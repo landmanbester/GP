@@ -11,8 +11,8 @@ from scipy import optimize as opt
 from GP.tools import posterior_mean, posterior_covariance, marginal_posterior, abs_diff
 from GP.tools import kronecker_tools as kt
 
-class KronGP(object):
-    def __init__(self, x, xp, y, Sigmay=None, covariance_function='sqexp'):
+class KronToepGP(object):
+    def __init__(self, x, xp, y, theta, Sigmay=None, covariance_function='sqexp'):
         """
         :param x: an array of arrays holding inputs i.e. x = [[x_1], [x_2], ..., [x_3]] where x_1 in R^{N_1} etc.
         :param xp: an array of arrays holding targets i.e. xp = [[xp_1], [xp_2], ..., [xp_3]] where xp_1 in R^{Np_1} etc.
@@ -27,10 +27,8 @@ class KronGP(object):
         self.Np = kt.kron_N(xp)
         self.xp = xp
         self.y = y
-        if Sigmay is not None:
-            self.Sigmay = Sigmay
-        else:
-            self.Sigmay = None
+
+        # instantiate
         self.covariance_function = covariance_function
 
         # initialise the individual diff square grids
@@ -98,7 +96,6 @@ def func(nu, t, sigma):
     return 5*np.sinc(nu)*5*np.sinc(t) + sigma*np.random.randn(int(np.sqrt(nu.size)), int(np.sqrt(t.size)))
 
 if __name__ == "__main__":
-    from GP.operators import covariance_ops
     # generate some data
     Nnu = 100
     numax = 5.0
@@ -123,9 +120,9 @@ if __name__ == "__main__":
     # get the true function at target points
     fp = func(nunup, ttp, 0.0)
 
-    # # create GP object
-    # print "Doing unweighted GP"
-    # GP = KronGP(x, xp, y)
+    # create GP object
+    print "Doing unweighted GP"
+    GP = KronGP(x, xp, y)
 
     # set hypers
     sigmaf = 1.0
@@ -133,11 +130,6 @@ if __name__ == "__main__":
     l2 = 1.0
     sigman = 0.5
     theta0 = np.array([sigmaf, l1, l2, sigman])
-
-    K = covariance_ops.K_op(x, theta0, kernels=["sqexp", "sqexp"])
-
-
-
     theta = GP.train(theta0)
 
     print "Training"
