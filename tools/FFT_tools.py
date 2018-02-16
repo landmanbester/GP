@@ -5,6 +5,7 @@ Some tools to exploit fast matrix vector products using the FFT. Inputs need to 
 
 import numpy as np
 import nifty2go as ift
+import pyfftw
 
 def FFT_circvec(c, x):
     """
@@ -76,6 +77,47 @@ if __name__=="__main__":
     # broadcast to circulant row
     row1 = np.append(Kx[0, :], Kx[0, np.arange(Nx)[1:-1][::-1]].conj())
 
+    # create FFTW objects
+    FFT = pyfftw.builders.rfft
+    iFFT = pyfftw.builders.irfft
+
+    # test 1D FFT
+    b = np.random.randn(Nx)
+
+    bhat = FFT(b)
+    b2 = iFFT(bhat())
+
+    print np.abs(b - b2()).max()
+
+    # test with zero padding
+    N2 = 2*Nx - 2
+
+    bhat = FFT(b, N2)
+
+    b2 = iFFT(bhat(), N2)()[0:Nx]
+
+    print np.abs(b - b2).max()
+
+    # test ND fft
+    FFTn = pyfftw.builders.rfftn
+    iFFTn = pyfftw.builders.irfftn
+    M = 14
+    B = np.random.randn(Nx, M)
+
+    Bhat = FFTn(B)
+
+    B2 = iFFTn(Bhat())
+
+    print np.abs(B - B2()).max()
+
+    # try with shape parameter
+    Bhat = FFTn(B, s=(N2, M), axes=(1, 1,))
+    print Bhat().shape
+    B2 = iFFTn(Bhat(), s=(N2, M), axes=(1, 1,))()[0:Nx, :]
+    print B2.shape
+
+    print np.abs(B - B2).max()
+
     # s_space = ift.RGSpace([Nx, Nx])
     # FFT = ift.FFTOperator(s_space)
     # h_space = FFT.target[0]
@@ -87,34 +129,36 @@ if __name__=="__main__":
 
 
 
-    # compare eigenvalues to fft coefficients
-    import scipy.linalg as scl
-
+    # # compare eigenvalues to fft coefficients
+    # import scipy.linalg as scl
+    #
     # Kcirc = scl.circulant(row1)
     # Lambda, Q = np.linalg.eigh(Kcirc)
-
-    Lambda2 = np.fft.fft(row1).real
-
-    #print "Eig diff = ", np.abs(np.sort(Lambda) - np.sort(Lambda2)).max(), np.abs(Lambda - Lambda2).min()
-
-    # get eigenvalues of Kx
-    Lambda3, Q3 = np.linalg.eigh(Kx)
-
-    Lambda4 = np.sort(Lambda2)[Nx-2::]
-
-    print "Eig diff 2 = ", np.abs(np.sort(Lambda3) - np.sort(Lambda4)).max(), np.abs(Lambda3 - Lambda4).min()
-
-    det1 = np.sum(np.log(np.abs(Lambda3)))
-    det2 = np.sum(np.log(np.abs(Lambda4)))
+    #
+    # Lambda2 = np.fft.fft(row1).real
+    #
+    # print "Eig diff = ", np.abs(np.sort(Lambda) - np.sort(Lambda2)).max(), np.abs(Lambda - Lambda2).min()
+    #
+    # # get eigenvalues of Kx
+    # Lambda3, Q3 = np.linalg.eigh(Kx)
+    #
+    # #I = np.argwhere(Lambda2 <=0)
+    # #Lambda2[I] = 1e-15
+    # Lambda4 = kernel.spectral_density(thetax, np.sqrt(Lambda3))
+    #
+    # print "Eig diff 2 = ", np.abs(np.sort(Lambda3) - np.sort(Lambda4)).max(), np.abs(Lambda3 - Lambda4).min()
+    #
+    # det1 = np.sum(np.log(np.abs(Lambda3)))
+    # det2 = np.sum(np.log(np.abs(Lambda4)))
     #
     # s = np.fft.rfftfreq(Nx, xx[0,1] - xx[0,0])
     #
     # pspec = kernel.spectral_density(thetax, s)
     #
     # s, det4 = np.linalg.slogdet(Kx)
-
-
-    print "Det diff = ", det1, det2, np.abs(det2-det1)/np.abs(det1)
+    #
+    #
+    # print "Det diff = ", det1, det2, det4, np.abs(det2-det1)/np.abs(det1)
     # t = np.random.randn(row1.size)
     # res1 = Kcirc.dot(t)
     # res2 = FFT_circvec(row1, t)

@@ -48,7 +48,7 @@ def kron_kron(A):
     :return: the Kronecker product of all elements of A
     """
     D = A.shape[0]
-    # expand the kronecker product for B
+    # expand the kronecker product for A
     K = np.kron(A[0], A[1])
     if D > 2:
         for i in xrange(2, D):
@@ -62,10 +62,10 @@ def kron_transpose(A):
     :return: an array of arrays holding matrices/vectors [A1.T, A2.T, ..., AD.T]
     """
     D = A.shape[0]
-    AT = np.zeros_like(A)
+    AT = []
     for i in xrange(D):
-        AT[i] = A[i].T
-    return AT
+        AT.append(A[i].T)
+    return np.asarray(AT)
 
 def kron_tensorvec(A, b):
     """
@@ -78,10 +78,11 @@ def kron_tensorvec(A, b):
     # get shape of sub-matrices
     G = np.zeros(D, dtype=np.int8)
     M = np.zeros(D, dtype=np.int8)
-    for d in np.arange(D)[::-1]:
+    for d in xrange(D):
         M[d], G[d] = A[d].shape
     x = b
-    for d in np.arange(D)[::-1]:
+    #for d in xrange(D - 1, -1, -1):
+    for d in xrange(D):
         Gd = G[d]
         rem = np.prod(np.delete(G, d))
         X = np.reshape(x, (Gd, rem))
@@ -102,7 +103,7 @@ def kron_matvec(A, b):
     D = A.shape[0]
     N = b.size
     x = b
-    for d in np.arange(D)[::-1]:
+    for d in xrange(D):
         Gd = A[d].shape[0]
         X = np.reshape(x,(Gd, N//Gd))
         Z = np.einsum("ab,bc->ac", A[d], X)
@@ -119,7 +120,7 @@ def kron_matvec_op(A, b, D):
     """
     N = b.size
     x = b
-    for d in np.arange(D)[::-1]:
+    for d in xrange(D - 1, -1, -1):
         Gd = A[d].K.shape[0]
         X = np.reshape(x,(Gd, N//Gd))
         Z = np.einsum("ab,bc->ac", A[d].K, X)
@@ -134,37 +135,27 @@ def kron_toep_matvec(A, b, Ntot, D):
     :param b: the RHS vector
     :return: x = A.dot(b)
     """
-    # # need to do these checks somehow
-    # D = A.D
-    # N = A.N
-    # assert N == b.size
-    x = b
-    for d in np.arange(D)[::-1]:
+    for d in xrange(D - 1, -1, -1):
         Gd = A[d].N
-        X = np.reshape(x, (Gd, Ntot//Gd))
+        X = np.reshape(b, (Gd, Ntot//Gd))
         Z = A[d].matmat(X)
-        x = Z.T.flatten()
-    return x
+        b = Z.T.flatten()
+    return b
 
-def kron_matmat(A, B):
+def kron_matmat(A, B):  # double check!!!!!!
     """
     Computes the product of two kronecker matrices
     :param A: 
     :param B: 
     :return: 
     """
-    D = B.shape[0]
-    K = kron_kron(B)
+    K = kron_kron(B)  # currently unavoidable
     M = K.shape[1]  # the product of Np_1 x Np_2 x ... x Np_3
 
-    # do kron_matvec on each column of result
-    dims = np.zeros(D)
-    for i in xrange(D):
-        dims[i] = A[i].shape[0]
-    N = int(np.prod(dims))
+    N = kron_N(A)
     C = np.zeros([N, M])
     for i in xrange(M):
-        C[:,i] = kron_matvec(A, K[:,i])
+        C[:,i] = kron_matvec(A, K[:, i])
     return C
 
 def kron_toep_matmat(A, B, Ntot, D):  # to test
@@ -306,7 +297,7 @@ if __name__=="__main__":
 
 
     kernel = exponential_squared.sqexp()
-    Nx = 500
+    Nx = 10
     sigmaf = 1.0
     lx = 0.25
     thetax = np.array([sigmaf, lx])
@@ -314,14 +305,14 @@ if __name__=="__main__":
     xx = abs_diff.abs_diff(x, x)
     Kx = kernel.cov_func(thetax, xx, noise=False)
 
-    Nt = 500
+    Nt = 12
     lt = 1.0
     thetat = np.array([sigmaf, lt])
     t = np.linspace(0, 1, Nt)
     tt = abs_diff.abs_diff(t, t)
     Kt = kernel.cov_func(thetat, tt, noise=False)
 
-    Nz = 500
+    Nz = 14
     lz = 1.5
     thetaz = np.array([sigmaf, lz])
     z = np.linspace(0, 1, Nz)
@@ -332,23 +323,23 @@ if __name__=="__main__":
     print N
     b = np.random.randn(N)
 
-    #K = np.kron(Kz, np.kron(Kx, Kt))
-    #A = np.array([Kt, Kx, Kz])  # note ordering!!!
+    K = np.kron(Kz, np.kron(Kx, Kt))
+    A = np.array([Kz, Kx, Kt])  # note ordering!!!
 
-    # # test kron_kron
-    # K2 = kron_kron(A[::-1])
-    # print "kron diff = ", np.abs(K - K2).max()
-    #
+    # test kron_kron
+    K2 = kron_kron(A)
+    print "kron diff = ", np.abs(K - K2).max()
+
     # test matvec
-    #res1 = np.dot(K, b)
-    #res2 = kron_matvec(A, b)
-    #print "matvec diff = ", np.abs(res1 - res2).max()
+    res1 = np.dot(K, b)
+    res2 = kron_matvec(A, b)
+    print "matvec diff = ", np.abs(res1 - res2).max()
 
-    from GP.operators import covariance_ops
-    X = np.array([t, x, z])
-    sigman = 0.1
-    theta0 = np.array([sigmaf, lt, lx, lz, sigman])
-    Kop = covariance_ops.K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], grid_regular=True)
+    # from GP.operators import covariance_ops
+    # X = np.array([t, x, z])
+    # sigman = 0.1
+    # theta0 = np.array([sigmaf, lt, lx, lz, sigman])
+    # Kop = covariance_ops.K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], grid_regular=True)
 
     # res1 = Kop(b)
     #
@@ -357,67 +348,68 @@ if __name__=="__main__":
     # print "Kop matvec diff = ", np.abs(res1 - res2).max()
 
     # test Ky_op
-    Sigmay = 0.1 * np.ones(N) + np.abs(0.1 * np.random.randn(N))
-    #Kymat = K + sigman**2*np.diag(Sigmay)
+    # Sigmay = 0.1 * np.ones(N) + np.abs(0.1 * np.random.randn(N))
+    # Kymat = K + sigman**2*np.diag(Sigmay)
 
-    Kyop = covariance_ops.Ky_op(Kop, Sigmay)
+    # Kyop = covariance_ops.Ky_op(Kop, Sigmay)
 
-    #res1 = Kymat.dot(b)
+    # res1 = Kymat.dot(b)
 
-    #res2 = Kyop(b)
+    # res2 = Kyop(b)
 
-    #print "Kyop matvec diff = ", np.abs(res1 - res2).max()
+    # print "Kyop matvec diff = ", np.abs(res1 - res2).max()
 
     # test Ky.idot
-    #print "Doing explicit inverse"
-    #res1 = np.linalg.solve(Kymat, b)
-    #Ainv = kron_inverse(A)
-    #print "Doing full inverse"
-    #res1 = kron_matvec(Ainv[::-1], b)
-    print "Doing approximate inverse"
-    res2 = Kyop.idot(b)
+    # print "Doing explicit inverse"
+    # res1 = np.linalg.solve(Kymat, b)
+    # Ainv = kron_inverse(A)
+    # print "Doing full inverse"
+    # res1 = kron_matvec(Ainv[::-1], b)
+    # print "Doing approximate inverse"
+    # res2 = Kyop.idot(b)
+    #
+    # print "Kyop.idot diff = ", res2.max() #np.abs(res1 - res2).max()
+    #
+    # test matmat
+    A2 = np.array([Kz + np.random.randn(Nz, Nz), Kx + np.random.randn(Nx, Nx), Kt + np.random.randn(Nt, Nt)])
+    K2 = kron_kron(A2)
+    res1 = np.dot(K, K2)
+    res2 = kron_matmat(A, A2)
+    print "matmat diff =", np.abs(res1 - res2).max()
 
-    print "Kyop.idot diff = ", res2.max() #np.abs(res1 - res2).max()
-    #
-    # # test matmat
-    # A2 = np.array([Kt + np.random.randn(Nt, Nt), Kx + np.random.randn(Nx, Nx), Kz + np.random.randn(Nz, Nz)])
-    # K2 = kron_kron(A2)
-    # res1 = np.dot(K, K2)
-    # res2 = kron_matmat(A, A2)
-    # print "matmat diff =", np.abs(res1 - res2).max()
-    #
-    # # test trace
-    # res1 = np.trace(K)
-    # res2 = kron_trace(A)
-    # print "Trace diff = ", np.abs(res1 - res2).max()
-    #
-    # # Test Cholesky (seems numerically unstable because K + jitter doesn't factor as kronecker product)
-    # res1 = np.linalg.cholesky(K + 1e-13*np.eye(K.shape[0]))
-    # L = kron_cholesky(A[::-1])
-    # res2 = kron_kron(L)
-    # print "Cholesky diff = ", np.abs(res1 - res2).max()
-    #
-    # # test logdet
-    # res1 = np.linalg.slogdet(K)[1]
-    # res2 = kron_logdet(L)
-    # print "cholesky logdet diff = ", np.abs(res1 - res2).max()
-    #
-    # # test eigenvalues
-    # Lambda, Q = np.linalg.eigh(K)
-    # Lambdas, Qs = kron_eig(A[::-1])
-    # Lambda2 = kron_diag(Lambdas)
-    # # sort to test eigenvalues
-    # I = np.argsort(Lambda2)
-    # Lambda3 = Lambda2[I]
-    # res2 = np.sum(np.log(Lambda2))
-    # print "eigenvalue logdet diff = ", np.abs(res1 - res2).max()
-    #
-    # print "Lambda diff = ", np.abs(Lambda - Lambda3).max()
-    #
-    # # test reconstructed K (eigenvectors not unique)
-    # Q2 = kron_kron(Qs)
-    # K2 = Q2.dot(np.dot(np.diag(Lambda2), Q2.T))
-    # print "K diff from eigen decomp = ", np.abs(K - K2).max()
+
+    # test trace
+    res1 = np.trace(K)
+    res2 = kron_trace(A)
+    print "Trace diff = ", np.abs(res1 - res2).max()
+
+    # Test Cholesky (seems numerically unstable because K + jitter doesn't factor as kronecker product)
+    res1 = np.linalg.cholesky(K + 1e-13*np.eye(K.shape[0]))
+    L = kron_cholesky(A)
+    res2 = kron_kron(L)
+    print "Cholesky diff = ", np.abs(res1 - res2).max()
+
+    # test logdet
+    res1 = np.linalg.slogdet(K)[1]
+    res2 = kron_logdet(L)
+    print "cholesky logdet diff = ", res1, res2, np.abs(res1 - res2).max()
+
+    # test eigenvalues
+    Lambda, Q = np.linalg.eigh(K)
+    Lambdas, Qs = kron_eig(A)
+    Lambda2 = kron_diag(Lambdas)
+    # sort to test eigenvalues
+    I = np.argsort(Lambda2)
+    Lambda3 = Lambda2[I]
+    res2 = np.sum(np.log(Lambda2))
+    print "eigenvalue logdet diff = ", np.abs(res1 - res2).max()
+
+    print "Lambda diff = ", np.abs(Lambda - Lambda3).max()
+
+    # test reconstructed K (eigenvectors not unique)
+    Q2 = kron_kron(Qs)
+    K2 = Q2.dot(np.dot(np.diag(Lambda2), Q2.T))
+    print "K diff from eigen decomp = ", np.abs(K - K2).max()
 
     # # test tensorvec
     # Nxp = 10

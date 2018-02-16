@@ -8,6 +8,7 @@ from scipy.sparse import linalg as ssl
 from scipy.sparse import diags
 from GP.tools import kronecker_tools as kt
 from GP.tools import FFT_tools as ft
+import pyfftw
 
 class sqexp(object):
     def __init__(self, p=None, D=1, Sigmay=None, mode=None):
@@ -99,53 +100,76 @@ class sqexp_op(ssl.LinearOperator):
         :param theta: the initial hyper-parameters 
         """
         self.N = x.size
-        self.x = x
+        self.x = np.reshape(x, (self.N, 1))
         self.theta = theta
         self.grid_regular = grid_regular
         if self.grid_regular:
             # get the first row of the diff square matrix
             self.r = np.abs(np.tile(x[0], self.N) - x)
             # compute covariance function at these locations
-            self.K1 = self.cov_func(self.theta, self.r)
+            K1 = self.cov_func(self.theta, self.r)
+            # broadcast to circulant form
+            C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
+            # take the fft
+            self.FFT = pyfftw.builders.rfft
+            self.iFFT = pyfftw.builders.irfft
+            self.FFTn = pyfftw.builders.rfftn
+            self.iFFTn = pyfftw.builders.irfftn
+            self.Chat = self.FFT(C)()  # this is all we really need to store
+            self.N2 = 2*self.N - 2 # the lengt of the broadcasted vector
         else:
             self.XX = abs_diff.abs_diff(self.x, self.x)
             self.K = self.cov_func(self.theta, self.XX)
 
-        # # set basis functions required for preconditioning
-        # self.M = np.array([20])
-        # self.L = np.array([15])
-        # from GP.tools import make_basis
-        # from GP.basisfuncs import rectangular
-        # self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
-        # self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)
-        # self.s = np.sqrt(self.Lambda)
-        # self.set_preconds()
+        # set basis functions required for preconditioning
+        self.M = np.array([12])
+        self.L = np.array([2.5])
+        from GP.tools import make_basis
+        from GP.basisfuncs import rectangular
+        self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
+        self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)
+        self.s = np.sqrt(self.Lambda)
+        self.set_preconds()
         # set mandatory attributes for LinearOperator class
         self.shape = (self.N, self.N)
         self.dtype = np.float64
 
     def _matvec(self, x):
-        if self.grid_regular:
-            return ft.FFT_toepvec(self.K1, x)
-        else:
+        if self.grid_regular: # uses FFT to do multiplication
+            x = self.FFT(x, self.N2)()
+            x *= self.Chat
+            return self.iFFT(x)()[0:self.N]
+        else: # dense multiplication
             return self.K.dot(x)
 
     def _matmat(self, x):
         if self.grid_regular:
-            return ft.FFT_toepmat(self.K1, x)
+            x = self.FFTn(x, s=(self.N2,), axes=(0,))()
+            x *= self.Chat[:, None]
+            return self.iFFTn(x, s=(self.N2,), axes=(0,))()[0:self.N, :]
         else:
             return self.K.dot(x)
+
+    def update_theta(self, theta):
+        self.theta = theta
+        if self.grid_regular:
+            K1 = self.cov_func(self.theta, self.r)
+            C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
+            self.Chat = self.FFT(C)
+        else:
+            self.XX = abs_diff.abs_diff(self.x, self.x)
+            self.K = self.cov_func(self.theta, self.XX)
 
     def set_preconds(self):
         self.S = self.spectral_density(self.theta, self.s)
         if self.grid_regular:
             self.PhiTPhi = np.einsum('ij,ji->i', self.Phi.T, self.Phi)  # computes only the diagonal entries
-            self.Z = self.PhiTPhi + theta[2] ** 2 / self.S
+            self.Z = self.PhiTPhi + self.theta[2] ** 2 / self.S
         else:
             self.PhiTPhi = np.dot(self.Phi.T, self.Phi)
             self.Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / self.S)
 
-    def _Mop(self, x):
+    def get_Lambda_Phi(self, x):
         return
 
 
@@ -187,7 +211,7 @@ class sqexp_op(ssl.LinearOperator):
         :param theta: hypers
         :param s: Fourier dual of x
         """
-        return np.sqrt(2*np.pi)*theta[0]**2.0*(theta[1]**2)**(self.D/2.0)*np.exp(-theta[1]**2*s**2/2.0)
+        return np.sqrt(2*np.pi)*theta[0]**2.0*theta[1]**2*np.exp(-theta[1]**2*s**2/2.0)
 
     def dspectral_density(self, theta, S, s, mode=0):
         """
@@ -221,7 +245,9 @@ if __name__=="__main__":
     # test matvec
     t = np.random.randn(N)
 
+    print "Starting"
     res1 = Kop(t)
+    print "Done"
 
     res2 = Kmat.dot(t)
 

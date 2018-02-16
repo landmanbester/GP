@@ -25,11 +25,19 @@ class K_op(ssl.LinearOperator):
         self.theta = theta
         # set up kernels for each dimension
         self.kernels = []
+        self.Phis = []
+        self.Lambdas = []
         for i, k in enumerate(kernels):
             if k == "sqexp":
                 self.kernels.append(expsq.sqexp_op(x[i], thetan[i], grid_regular=grid_regular))
+                self.Phis.append(self.kernels[i].Phi)
+                self.Lambdas.append(self.kernels[i].Lambda)
             else:
                 raise Exception("Unsupported kernel %s"%k)
+        self.Phis = np.asarray(self.Phis)
+        self.Lambdas = np.asarray(self.Lambdas)
+        self.Lambdas = kt.kron_diag_diag(self.Lambdas)
+        self.PhisT = kt.kron_transpose(self.Phis)
         self.shape = (self.N, self.N)
         self.dtype = np.float64
         self.grid_regular = grid_regular
@@ -43,21 +51,39 @@ class K_op(ssl.LinearOperator):
     def _matmat(self, x):
         return kt.kron_toep_matmat(self.kernels, x, self.N, self.D)
 
+    def PhiTdot(self, x):
+        return kt.kron_tensorvec(self.PhisT, x)
+
+    def Phidot(self, x):
+        return kt.kron_tensorvec(self.Phis, x)
+
+    def set_nugget(self, sigma):
+        self.nugget = self.Lambdas + sigma
+
+    def idot(self, x):
+        return kt.kron_tensorvec(self.Phis,kt.kron_tensorvec(self.PhisT, x)/self.nugget)
+
 class Ky_op(ssl.LinearOperator):
     def __init__(self, K, Sigmay=None):
         self.K = K  # this is the linear operator representation of the covariance matrix
         if Sigmay is not None:
             # not spherical noise
             self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*Sigmay))
-            self.Mop = ssl.aslinearoperator(diags(1.0/(self.K.theta[-1]*np.sqrt(Sigmay))))  # preconditioner suggested by Wilson et. al.
+            # get noise average
+            self.eps = np.mean(self.K.theta[-1]**2*Sigmay)
+            self.Sigmayinv = np.ones(self.K.kernels[0].N)
+            #self.Mop = ssl.aslinearoperator(diags(1.0/(self.K.theta[-1]*np.sqrt(Sigmay))))  # preconditioner suggested by Wilson et. al.
         else:
             # spherical noise
             self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*np.ones(self.K.N, dtype=np.float64)))
+            self.eps = self.K.theta[-1]**2
             self.Mop = ssl.aslinearoperator(diags(1.0 / (self.K.theta[-1] * np.ones(self.K.N, dtype=np.float64))))
 
         self.shape = (self.K.N, self.K.N)
         self.dtype = np.float64
 
+    def Mop(self):
+        return
 
     def _matvec(self, x):
         return self.K(x) + self.Sigmay(x)
@@ -66,7 +92,7 @@ class Ky_op(ssl.LinearOperator):
         return self.K._matmat(x) + self.Sigmay(x)
 
     def idot(self, x):
-        tmp = ssl.cg(self.K + self.Sigmay, x, tol=1e-10, M=self.Mop)
+        tmp = ssl.cg(self.K + self.Sigmay, x, tol=1e-10, M=self.K)
         if tmp[1] > 0:
             print "Warning cg tol not achieved"
         return tmp[0]
@@ -89,50 +115,55 @@ class Ky_op(ssl.LinearOperator):
                     return 2 * theta[2] * np.eye(x.shape[0])
 
 if __name__=="__main__":
-    N = 1024
-    x = np.linspace(-10, 10, N)
+    # set inputs
+    Nx = 10
     sigmaf = 1.0
-    l = 1.0
+    lx = 0.25
+    x = np.linspace(-1, 1, Nx)
+
+    Nt = 10
+    lt = 1.0
+    t = np.linspace(-1, 1, Nt)
+
+    Nz = 10
+    lz = 1.5
+    z = np.linspace(-1, 1, Nz)
+
+    N = Nx * Nt * Nz
+    print "N = ", N
+
+    # draw random vector to multiply with
+    print "drawing random vector"
+    b = np.random.randn(N)
+
+    # join up all targets
+    X = np.array([t, x, z])
     sigman = 0.1
-    theta = np.array([sigmaf, l, sigman])
+    theta0 = np.array([sigmaf, lt, lx, lz, sigman])
 
-    # get operator representation
-    Kop = esq.sqexp_op(x, theta)
+    # instantiate K operator
+    print "initialising K"
+    Kop = K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], grid_regular=True)
 
-    # get dense representation
-    kernel = esq.sqexp()
-    xx = abs_diff.abs_diff(x, x)
-    Kmat = kernel.cov_func(theta, xx, noise=False)
-
-    # create noise variance
+    # set diagonal noise matrix
+    print "Setting Sigmay"
     Sigmay = 0.1 * np.ones(N) + np.abs(0.1 * np.random.randn(N))
 
-    # set Ky operator
-    Ky = Ky_op(Kop, Sigmay=Sigmay)
+    # instantiate Ky operator
+    print "Initialising Ky"
+    Kyop = Ky_op(Kop, Sigmay)
 
-    # test matvec
-    t = np.random.randn(N)
-    res1 = Ky(t)
+    # test if PhiT Sigmayinv Phi is diagonal
+    Phi = kt.kron_kron(Kop.Phis)
+    PhiT = kt.kron_kron(Kop.PhisT)
+    Lambda = kt.kron_diag_diag(Kop.Lambdas)
+    tmp1 = PhiT.dot(Phi)
+    tmp2 = Phi.dot(Phi.T)
 
-    res2 = Kmat.dot(t) + np.diag(sigman**2*Sigmay).dot(t)
+    Sigmayinv = np.diag(1.0/Sigmay)
+    Lambdainv = np.diag(1.0/np.diag(Lambda))
+    tmp = Lambdainv + PhiT.dot(Sigmayinv.dot(Phi))
 
-    print np.abs(res1 - res2).max()
+    print np.linalg.cond(tmp)
 
-    # test matmat
-    Ky = Ky_op(Kop, Sigmay=Sigmay)
-
-    # test matvec
-    tt = np.random.randn(N, 10)
-    res1 = Ky._matmat(tt)
-
-    res2 = Kmat.dot(tt) + np.diag(sigman**2*Sigmay).dot(tt)
-
-    print np.abs(res1 - res2).max()
-
-    # test idot
-    Kymat = Kmat + np.diag(sigman**2*Sigmay)
-    res1 = np.linalg.solve(Kymat, t)
-
-    res2 = Ky.idot(t)
-
-    print np.abs(res1 - res2).max()
+    print "hello"
