@@ -10,9 +10,10 @@ import numpy as np
 from scipy import optimize as opt
 from GP.tools import posterior_mean, posterior_covariance, marginal_posterior, abs_diff
 from GP.tools import kronecker_tools as kt
+from GP.operators import covariance_ops
 
 class KronToepGP(object):
-    def __init__(self, x, xp, y, theta, Sigmay=None, covariance_function='sqexp'):
+    def __init__(self, x, xp, y, theta, Sigmay=None, kernels='sqexp'):
         """
         :param x: an array of arrays holding inputs i.e. x = [[x_1], [x_2], ..., [x_3]] where x_1 in R^{N_1} etc.
         :param xp: an array of arrays holding targets i.e. xp = [[xp_1], [xp_2], ..., [xp_3]] where xp_1 in R^{Np_1} etc.
@@ -22,46 +23,25 @@ class KronToepGP(object):
         :param covariance_function: a list holding the covariance functions to use for each dimension
         """
         self.D = x.shape[0]
-        self.N = kt.kron_N(x)
+        self.N = y.size
         self.x = x
         self.Np = kt.kron_N(xp)
         self.xp = xp
-        self.y = y
+        self.y = y.flatten()
 
         # instantiate
-        self.covariance_function = covariance_function
-
-        # initialise the individual diff square grids
-        self.XX = []
-        self.XXp = []
-        self.XXpp = []
-        for i in xrange(self.D):
-            self.XX.append(abs_diff.abs_diff(self.x[i], self.x[i]))
-            self.XXp.append(abs_diff.abs_diff(self.x[i], self.xp[i]))
-            self.XXpp.append(abs_diff.abs_diff(self.xp[i], self.xp[i]))
-        self.XX = np.asarray(self.XX)
-        self.XXp = np.asarray(self.XXp)
-        self.XXpp = np.asarray(self.XXpp)
-
-        # set the kernels
-        from GP.kernels import exponential_squared  # only using this one for now
-        self.kernels = []
-        self.kernels_transformed = []
-        for i in xrange(self.D):
-            if self.Sigmay is not None:
-                self.kernels.append(exponential_squared.sqexp(Sigmay=self.Sigmay[i], mode='kron'))
-                #self.kernels_transformed.append(exponential_squared.sqexp(mode='kron'))
-            else:
-                self.kernels.append(exponential_squared.sqexp(mode='kron'))
+        self.theta = theta
+        self.kernels = kernels
+        self.Kop = covariance_ops.K_op(x, theta, kernels)
+        self.Kyop = covariance_ops.Ky_op(self.Kop, Sigmay)
 
         # Instantiate posterior mean, cov and evidence classes
-        self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernels, mode="kron",
-                                          XX=self.XX, XXp=self.XXp)
-        self.meanf = lambda theta: self.meano.give_mean(theta)
-        self.covo = posterior_covariance.covf(self.kernels, mode="kron", XX=self.XX, XXp=self.XXp, XXpp=self.XXpp)
-        self.covf = lambda theta: self.covo.give_covariance(theta)
-        self.logpo = marginal_posterior.evidence(self.x, self.y, self.kernels, mode="kron", XX=self.XX)
-        self.logp = lambda theta: self.logpo.logL(theta)
+        # self.meano = posterior_mean.meanf(self.x, self.xp, self.y, self.kernels, mode="kron",
+        #                                   XX=self.XX, XXp=self.XXp)
+        # self.meanf = lambda theta: self.meano.give_mean(theta)
+        # self.covo = posterior_covariance.covf(self.kernels, mode="kron", XX=self.XX, XXp=self.XXp, XXpp=self.XXpp)
+        # self.covf = lambda theta: self.covo.give_covariance(theta)
+        self.logpo = marginal_posterior.evidence_op(self.y, self.Kyop)
 
     def train(self, theta0, bounds=None):
         """
@@ -81,7 +61,7 @@ class KronToepGP(object):
             bnds = bounds # make sure above criteria on bounds satisfied if passing default bounds
 
         # Do optimisation
-        thetap = opt.fmin_l_bfgs_b(self.logp, theta0, fprime=None, bounds=bnds) #, approx_grad=True) #, factr=1e10, pgtol=0.1)
+        thetap = opt.fmin_l_bfgs_b(self.logpo.logL, theta0, fprime=None, bounds=bnds, approx_grad=True) #, factr=1e10, pgtol=0.1)
 
         theta = thetap[0]
 
@@ -120,60 +100,45 @@ if __name__ == "__main__":
     # get the true function at target points
     fp = func(nunup, ttp, 0.0)
 
-    # create GP object
-    print "Doing unweighted GP"
-    GP = KronGP(x, xp, y)
-
     # set hypers
-    sigmaf = 1.0
-    l1 = 1.0
-    l2 = 1.0
-    sigman = 0.5
+    sigmaf = 2.12662296
+    l1 = 0.91048988
+    l2 = 0.90298655
+    sigman = 0.10111004
     theta0 = np.array([sigmaf, l1, l2, sigman])
-    theta = GP.train(theta0)
 
-    print "Training"
-    fmean = GP.meanf(theta).reshape(nunup.shape)
-
+    # create GP object
+    print "Instantiationg GP"
     # do for transformed data
     N = Nnu*Nt
-    Sigmay = 0.1 * np.ones([Nnu, Nt]) + np.abs(0.1 * np.random.randn(Nnu, Nt))
+    Sigmay = (0.1 * np.ones([Nnu, Nt]) + np.abs(0.1 * np.random.randn(Nnu, Nt))).flatten()
+    GP = KronToepGP(x, xp, y, theta0, Sigmay=Sigmay, kernels=["sqexp", "sqexp"])
 
-    #print "Simulating weighted noise"
-    #Noise = np.reshape(np.random.multivariate_normal(np.zeros(N), np.diag(Sigmay.flatten())), (Nnu, Nt))
+    print "Training"
+    theta = GP.train(theta0)
 
-    # y2 = func(nunu, tt, Sigmay)
-    #
-    # print "Doing weighted GP"
-    # GP = KronGP(x, xp, y, Sigmay=Sigmay)
-    #
-    # print "Training"
-    # theta2 = GP.train_transformed(theta0)
-    #
-    # fmean2 = GP.meanft(theta).reshape(nunup.shape)
-    #
-    # print fmean2/fmean
+    # fmean = GP.meanf(theta).reshape(nunup.shape)
 
 
 
-    # plot expected result
-    import matplotlib.pyplot as plt
-    plt.figure('Data')
-    plt.imshow(y)
-    plt.colorbar()
-    plt.figure('True')
-    plt.imshow(fp)
-    plt.colorbar()
-    plt.figure('fp')
-    plt.imshow(fmean)
-    plt.colorbar()
+    # # plot expected result
+    # import matplotlib.pyplot as plt
+    # plt.figure('Data')
+    # plt.imshow(y)
+    # plt.colorbar()
+    # plt.figure('True')
+    # plt.imshow(fp)
+    # plt.colorbar()
+    # plt.figure('fp')
+    # plt.imshow(fmean)
+    # plt.colorbar()
     # plt.figure('Data2')
     # plt.imshow(GP.ytransformed)
     # plt.colorbar()
     # plt.figure('fp2')
     # plt.imshow(fmean2)
     # plt.colorbar()
-    plt.show()
+    # plt.show()
 
 
 

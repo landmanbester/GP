@@ -123,9 +123,9 @@ if __name__ == "__main__":
     # get the true function at target points
     fp = func(nunup, ttp, 0.0)
 
-    # # create GP object
-    # print "Doing unweighted GP"
-    # GP = KronGP(x, xp, y)
+    # create GP object
+    print "Doing unweighted GP"
+    GP = KronGP(x, xp, y)
 
     # set hypers
     sigmaf = 1.0
@@ -134,11 +134,13 @@ if __name__ == "__main__":
     sigman = 0.5
     theta0 = np.array([sigmaf, l1, l2, sigman])
 
-    K = covariance_ops.K_op(x, theta0, kernels=["sqexp", "sqexp"])
+    #K = covariance_ops.K_op(x, theta0, kernels=["sqexp", "sqexp"])
 
 
 
     theta = GP.train(theta0)
+
+    print theta
 
     print "Training"
     fmean = GP.meanf(theta).reshape(nunup.shape)

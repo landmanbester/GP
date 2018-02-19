@@ -255,3 +255,32 @@ class evidence(object):
         return logp, dlogp
 
 
+class evidence_op(object):
+    def __init__(self, y, Ky):
+        """
+        Computes the (approximate) evidence for GPR
+        :param y: the data vector with mean subtracted
+        :param Ky: the Ky opereator 
+        """
+        self.y = y
+        self.N = y.size
+        self.Ky = Ky
+
+    def logL(self, theta):
+        # update hypers
+        self.Ky.update_theta(theta)
+
+        # get terms required in marginal likelihood
+        alpha = self.Ky.idot(self.y)
+        logdet = self.Ky.give_logdet()
+
+        # get marginal likelihood
+        logp = (self.y.T.dot(alpha) + logdet + self.N*np.log(2.0*np.pi))/2.0
+
+        # next we get the derivatives (do numerically?)
+        # Nhypers = theta.size
+        # dlogp = np.zeros(Nhypers)
+
+        print theta, logp
+        return logp
+

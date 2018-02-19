@@ -13,7 +13,7 @@ from GP.tools import FFT_tools as ft
 
 
 class K_op(ssl.LinearOperator):
-    def __init__(self, x, theta, kernels=["sqexp"], grid_regular=True):
+    def __init__(self, x, theta, kernels=["sqexp"]):
         self.D = x.shape[0]
         self.N = kt.kron_N(x)
         self.x = x
@@ -25,65 +25,91 @@ class K_op(ssl.LinearOperator):
         self.theta = theta
         # set up kernels for each dimension
         self.kernels = []
-        self.Phis = []
-        self.Lambdas = []
+        # self.Phis = []
+        # self.Lambdas = []
         for i, k in enumerate(kernels):
             if k == "sqexp":
-                self.kernels.append(expsq.sqexp_op(x[i], thetan[i], grid_regular=grid_regular))
-                self.Phis.append(self.kernels[i].Phi)
-                self.Lambdas.append(self.kernels[i].Lambda)
+                self.kernels.append(expsq.sqexp_op(x[i], thetan[i]))
+                # self.Phis.append(self.kernels[i].Phi)
+                # self.Lambdas.append(self.kernels[i].S)  # approximate power spectrum
             else:
                 raise Exception("Unsupported kernel %s"%k)
-        self.Phis = np.asarray(self.Phis)
-        self.Lambdas = np.asarray(self.Lambdas)
-        self.Lambdas = kt.kron_diag_diag(self.Lambdas)
-        self.PhisT = kt.kron_transpose(self.Phis)
+        # self.Phis = np.asarray(self.Phis)
+        # self.Lambdas = np.asarray(self.Lambdas)
+        # self.Lambdas = kt.kron_diag(self.Lambdas)
+        # self.PhisT = kt.kron_transpose(self.Phis)
         self.shape = (self.N, self.N)
         self.dtype = np.float64
-        self.grid_regular = grid_regular
+
+    def update_theta(self, theta):
+        self.theta = theta
+        thetan = np.zeros([self.D, 3])
+        thetan[:, 0] = theta[0]
+        thetan[:, -1] = theta[-1]
+        for i in xrange(self.D):  # this is how many length scales will be involved in te problem
+            thetan[i, 1] = theta[i + 1]  # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
+            self.kernels[i].update_theta(thetan[i, :])
 
     def _matvec(self, x):
-        if self.grid_regular:
-            return kt.kron_toep_matvec(self.kernels, x, self.N, self.D)
-        else:
-            return kt.kron_matvec_op(self.kernels, x, self.D)
+        return kt.kron_toep_matvec(self.kernels, x, self.N, self.D)
 
     def _matmat(self, x):
         return kt.kron_toep_matmat(self.kernels, x, self.N, self.D)
 
-    def PhiTdot(self, x):
-        return kt.kron_tensorvec(self.PhisT, x)
+    def give_FFT_eigs(self):
+        self.FFT_eigs = np.empty(self.D, dtype=object)
+        self.Ns = np.zeros(self.D, dtype=np.int8)
+        self.Ms = np.zeros(self.D, dtype=np.int8)
+        for d in xrange(self.D):
+            # get Chat
+            Nd = self.kernels[d].N
+            self.Ns[d] = Nd
+            self.Ms[d] = 2*Nd - 2
+            self.FFT_eigs[d] = np.sort(self.kernels[d].Chat.real)[::-1][0:Nd]
+        self.FFT_eigs = kt.kron_diag(self.FFT_eigs)
+        return self.FFT_eigs, np.prod(self.Ns), np.prod(self.Ms)
 
-    def Phidot(self, x):
-        return kt.kron_tensorvec(self.Phis, x)
+    # # still figuring it out below this line!!!!
+    # def set_nugget(self, sigma):
+    #     self.sigma = sigma
+    #     self.nugget = self.Lambdas + sigma
+    #     print "Helo"
+    #
+    # def dot2(self, x):
+    #     x = kt.kron_tensorvec(self.PhisT, x)
+    #     x *= self.Lambdas
+    #     x = kt.kron_tensorvec(self.Phis, x)
+    #     x += self.sigma
+    #     return x
+    #
+    # def idot(self, x):
+    #     x = kt.kron_tensorvec(self.PhisT, x)
+    #     x /= self.nugget
+    #     return kt.kron_tensorvec(self.Phis, x)
 
-    def set_nugget(self, sigma):
-        self.nugget = self.Lambdas + sigma
-
-    def idot(self, x):
-        return kt.kron_tensorvec(self.Phis,kt.kron_tensorvec(self.PhisT, x)/self.nugget)
 
 class Ky_op(ssl.LinearOperator):
     def __init__(self, K, Sigmay=None):
         self.K = K  # this is the linear operator representation of the covariance matrix
         if Sigmay is not None:
+            self.diag_noise = Sigmay
             # not spherical noise
-            self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*Sigmay))
+            self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*self.diag_noise))
             # get noise average
             self.eps = np.mean(self.K.theta[-1]**2*Sigmay)
-            self.Sigmayinv = np.ones(self.K.kernels[0].N)
-            #self.Mop = ssl.aslinearoperator(diags(1.0/(self.K.theta[-1]*np.sqrt(Sigmay))))  # preconditioner suggested by Wilson et. al.
         else:
+            self.diag_noise = np.ones(self.K.N, dtype=np.float64)
             # spherical noise
-            self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*np.ones(self.K.N, dtype=np.float64)))
+            self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*self.diag_noise))
             self.eps = self.K.theta[-1]**2
-            self.Mop = ssl.aslinearoperator(diags(1.0 / (self.K.theta[-1] * np.ones(self.K.N, dtype=np.float64))))
 
         self.shape = (self.K.N, self.K.N)
         self.dtype = np.float64
 
-    def Mop(self):
-        return
+    def update_theta(self, theta):
+        self.K.update_theta(theta)
+        self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1] ** 2 * self.diag_noise))
+        self.eps = np.mean(self.K.theta[-1] ** 2 * self.diag_noise)
 
     def _matvec(self, x):
         return self.K(x) + self.Sigmay(x)
@@ -92,10 +118,16 @@ class Ky_op(ssl.LinearOperator):
         return self.K._matmat(x) + self.Sigmay(x)
 
     def idot(self, x):
-        tmp = ssl.cg(self.K + self.Sigmay, x, tol=1e-10, M=self.K)
+        tmp = ssl.cg(self.K + self.Sigmay, x, tol=1e-10)
         if tmp[1] > 0:
             print "Warning cg tol not achieved"
         return tmp[0]
+
+    def give_logdet(self):
+        eigs, N, M = self.K.give_FFT_eigs()
+        # using approximate nugget term eps if Sigmay not specified
+        self.logdet = np.sum(np.log(N*eigs/M + self.eps))
+        return self.logdet
 
     def dKdtheta(self, theta, x, K, mode):
         if mode == "sigmaf":

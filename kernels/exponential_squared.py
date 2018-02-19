@@ -94,7 +94,7 @@ class sqexp_op(ssl.LinearOperator):
     """
     This is the linear operator representation of a covariance matrix defined on a regular grid
     """
-    def __init__(self, x, theta, grid_regular=True):
+    def __init__(self, x, theta):
         """
         :param x: the inputs (coordinates at which to evaluate the covariance function 
         :param theta: the initial hyper-parameters 
@@ -102,75 +102,82 @@ class sqexp_op(ssl.LinearOperator):
         self.N = x.size
         self.x = np.reshape(x, (self.N, 1))
         self.theta = theta
-        self.grid_regular = grid_regular
-        if self.grid_regular:
-            # get the first row of the diff square matrix
-            self.r = np.abs(np.tile(x[0], self.N) - x)
-            # compute covariance function at these locations
-            K1 = self.cov_func(self.theta, self.r)
-            # broadcast to circulant form
-            C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
-            # take the fft
-            self.FFT = pyfftw.builders.rfft
-            self.iFFT = pyfftw.builders.irfft
-            self.FFTn = pyfftw.builders.rfftn
-            self.iFFTn = pyfftw.builders.irfftn
-            self.Chat = self.FFT(C)()  # this is all we really need to store
-            self.N2 = 2*self.N - 2 # the lengt of the broadcasted vector
-        else:
-            self.XX = abs_diff.abs_diff(self.x, self.x)
-            self.K = self.cov_func(self.theta, self.XX)
 
-        # set basis functions required for preconditioning
-        self.M = np.array([12])
-        self.L = np.array([2.5])
-        from GP.tools import make_basis
-        from GP.basisfuncs import rectangular
-        self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
-        self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)
-        self.s = np.sqrt(self.Lambda)
-        self.set_preconds()
+        # get the first row of the diff square matrix
+        self.r = np.abs(np.tile(x[0], self.N) - x)
+
+        # compute covariance function at these locations
+        K1 = self.cov_func(self.theta, self.r)
+
+        # broadcast to circulant form
+        C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
+
+        # set FFT objects
+        self.FFT = pyfftw.builders.rfft
+        self.iFFT = pyfftw.builders.irfft
+        self.FFTn = pyfftw.builders.rfftn
+        self.iFFTn = pyfftw.builders.irfftn
+
+        # take the fft (only covariance info we need to store
+        self.Chat = self.FFT(C)()  # this is all we really need to store for covariance function
+        self.N2 = 2 * self.N - 2  # the lengt of the broadcasted vector
+
+        # set up for inverse
+        self.FFT2 = pyfftw.builders.fft
+        self.iFFT2 = pyfftw.builders.ifft
+        self.Chat2 = self.FFT2(C)().real
+        self.Chat2[0] + 1e-13 # jitter required for inverse
+
+
         # set mandatory attributes for LinearOperator class
         self.shape = (self.N, self.N)
         self.dtype = np.float64
 
+        # still figuring it out below this line
+        # # set basis functions required for preconditioning
+        # self.M = np.array([12])
+        # self.L = np.array([2.5])
+        # from GP.tools import make_basis
+        # from GP.basisfuncs import rectangular
+        # self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
+        # self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)
+        # self.s = np.sqrt(self.Lambda)
+        # self.set_preconds()
+
+
     def _matvec(self, x):
-        if self.grid_regular: # uses FFT to do multiplication
-            x = self.FFT(x, self.N2)()
-            x *= self.Chat
-            return self.iFFT(x)()[0:self.N]
-        else: # dense multiplication
-            return self.K.dot(x)
+        x = self.FFT(x, self.N2)()
+        x *= self.Chat
+        return self.iFFT(x)()[0:self.N]
+
+    def idot(self, x):
+        # uses FFT to do inverse multiplication (an approximation for small data sets?)
+        xhat = self.FFT2(x, self.N2)()
+        y = xhat/self.Chat2
+        return self.iFFT2(y)()[0:self.N].real
 
     def _matmat(self, x):
-        if self.grid_regular:
-            x = self.FFTn(x, s=(self.N2,), axes=(0,))()
-            x *= self.Chat[:, None]
-            return self.iFFTn(x, s=(self.N2,), axes=(0,))()[0:self.N, :]
-        else:
-            return self.K.dot(x)
+        x = self.FFTn(x, s=(self.N2,), axes=(0,))()
+        x *= self.Chat[:, None]
+        return self.iFFTn(x, s=(self.N2,), axes=(0,))()[0:self.N, :]
 
     def update_theta(self, theta):
         self.theta = theta
-        if self.grid_regular:
-            K1 = self.cov_func(self.theta, self.r)
-            C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
-            self.Chat = self.FFT(C)
-        else:
-            self.XX = abs_diff.abs_diff(self.x, self.x)
-            self.K = self.cov_func(self.theta, self.XX)
+        K1 = self.cov_func(self.theta, self.r)
+        C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
+        self.Chat = self.FFT(C)()
 
-    def set_preconds(self):
-        self.S = self.spectral_density(self.theta, self.s)
-        if self.grid_regular:
-            self.PhiTPhi = np.einsum('ij,ji->i', self.Phi.T, self.Phi)  # computes only the diagonal entries
-            self.Z = self.PhiTPhi + self.theta[2] ** 2 / self.S
-        else:
-            self.PhiTPhi = np.dot(self.Phi.T, self.Phi)
-            self.Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / self.S)
-
-    def get_Lambda_Phi(self, x):
-        return
+    # def set_preconds(self):
+    #     self.S = self.spectral_density(self.theta, self.s)
+    #     if self.grid_regular:
+    #         self.PhiTPhi = np.einsum('ij,ji->i', self.Phi.T, self.Phi)  # computes only the diagonal entries
+    #         self.Z = self.PhiTPhi + self.theta[2] ** 2 / self.S
+    #     else:
+    #         self.PhiTPhi = np.dot(self.Phi.T, self.Phi)
+    #         self.Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / self.S)
+    #
+    # def get_Lambda_Phi(self, x):
+    #     return
 
 
     def cov_func(self, theta, x):
@@ -230,7 +237,7 @@ if __name__=="__main__":
     N = 1024
     x = np.linspace(-10, 10, N)
     sigmaf = 1.0
-    l = 1.0
+    l = 0.0000001
     sigman = 0.1
     theta = np.array([sigmaf, l, sigman])
 
@@ -252,6 +259,20 @@ if __name__=="__main__":
     res2 = Kmat.dot(t)
 
     print "matvec diff = ", np.abs(res1 - res2).max()
+
+    #res1 = np.sort(Kop.idot(t))[::-1]
+    res1 = Kop.idot(t)
+    #res2 = np.sort(np.linalg.solve(Kmat + 1e-13*np.eye(N), t))[::-1]
+    res2 = np.linalg.solve(Kmat + 1e-13 * np.eye(N), t)
+
+    import matplotlib.pyplot as plt
+    plt.figure('inv')
+    plt.plot(res1, 'bx')
+    plt.plot(res2, 'rx')
+    plt.show()
+
+
+    print "idot diff = ", np.abs(res1 - res2).max()
 
     # test matmat
     tt = np.random.randn(N, 10)
