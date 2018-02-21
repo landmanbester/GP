@@ -100,7 +100,9 @@ class sqexp_op(ssl.LinearOperator):
         :param theta: the initial hyper-parameters 
         """
         self.N = x.size
-        self.x = np.reshape(x, (self.N, 1))
+        # shift the coordinate to origin (this is for effective preconditioning)
+        xshift = x.min() + (x.max() - x.min())/2.0
+        self.x = np.reshape(x - xshift, (self.N, 1))
         self.theta = theta
 
         # get the first row of the diff square matrix
@@ -108,6 +110,8 @@ class sqexp_op(ssl.LinearOperator):
 
         # compute covariance function at these locations
         K1 = self.cov_func(self.theta, self.r)
+
+        self.K1 = K1
 
         # broadcast to circulant form
         C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
@@ -122,39 +126,36 @@ class sqexp_op(ssl.LinearOperator):
         self.Chat = self.FFT(C)()  # this is all we really need to store for covariance function
         self.N2 = 2 * self.N - 2  # the lengt of the broadcasted vector
 
-        # set up for inverse
-        self.FFT2 = pyfftw.builders.fft
-        self.iFFT2 = pyfftw.builders.ifft
-        self.Chat2 = self.FFT2(C)().real
-        self.Chat2[0] + 1e-13 # jitter required for inverse
-
-
         # set mandatory attributes for LinearOperator class
         self.shape = (self.N, self.N)
         self.dtype = np.float64
 
-        # still figuring it out below this line
-        # # set basis functions required for preconditioning
-        # self.M = np.array([12])
-        # self.L = np.array([2.5])
-        # from GP.tools import make_basis
-        # from GP.basisfuncs import rectangular
-        # self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)
-        # self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)
-        # self.s = np.sqrt(self.Lambda)
-        # self.set_preconds()
+        # set up for inverse
+        self.FFT2 = pyfftw.builders.fft
+        self.iFFT2 = pyfftw.builders.ifft
+        self.Chat2 = self.FFT2(C)().real + theta[-1]**2  # adding diagonal jitter is the same as adding a constant to
+                                                    # the Fourier modes. Should be adding the nugget here
 
+        # set basis functions required for preconditioning
+        self.M = np.array([7])
+        self.L = np.array([np.maximum(1.75*self.x.max(), 1.05*self.theta[1])])
+        from GP.tools import make_basis
+        from GP.basisfuncs import rectangular
+        self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)  # does not depend on theta
+        self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)  # do not confuse with Lambdas in K operator, no dependence on theta
+        self.s = np.sqrt(self.Lambda)  # does not depend on theta
+        self.S = self.spectral_density(self.theta, self.s)  # this becomes Lambdas in K operator, depends on theta
 
     def _matvec(self, x):
         x = self.FFT(x, self.N2)()
         x *= self.Chat
         return self.iFFT(x)()[0:self.N]
 
-    def idot(self, x):
-        # uses FFT to do inverse multiplication (an approximation for small data sets?)
-        xhat = self.FFT2(x, self.N2)()
-        y = xhat/self.Chat2
-        return self.iFFT2(y)()[0:self.N].real
+    # def idot(self, x):
+    #     # uses FFT to do inverse multiplication (only works if length scale much smaller than observation length)
+    #     xhat = self.FFT2(x, self.N2)()
+    #     y = xhat/self.Chat2
+    #     return self.iFFT2(y)()[0:self.N].real
 
     def _matmat(self, x):
         x = self.FFTn(x, s=(self.N2,), axes=(0,))()
@@ -166,19 +167,8 @@ class sqexp_op(ssl.LinearOperator):
         K1 = self.cov_func(self.theta, self.r)
         C = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
         self.Chat = self.FFT(C)()
-
-    # def set_preconds(self):
-    #     self.S = self.spectral_density(self.theta, self.s)
-    #     if self.grid_regular:
-    #         self.PhiTPhi = np.einsum('ij,ji->i', self.Phi.T, self.Phi)  # computes only the diagonal entries
-    #         self.Z = self.PhiTPhi + self.theta[2] ** 2 / self.S
-    #     else:
-    #         self.PhiTPhi = np.dot(self.Phi.T, self.Phi)
-    #         self.Z = self.PhiTPhi + theta[2] ** 2 * np.diag(1.0 / self.S)
-    #
-    # def get_Lambda_Phi(self, x):
-    #     return
-
+        self.Chat2 = self.FFT2(C)().real + 1.0e-13
+        self.S = self.spectral_density(self.theta, self.s)
 
     def cov_func(self, theta, x):
         """
@@ -233,12 +223,22 @@ class sqexp_op(ssl.LinearOperator):
         elif mode == 1:
             return self.D*S/theta[1] - s**2*theta[1]*S
 
+def RRlogdet(N, sigman, pspec):
+    Z = sigman**2/pspec + np.ones(N)
+    logdetZ = np.sum(np.log(Z))
+    logpspec = np.sum(np.log(pspec))
+    return logdetZ + logpspec #+ term1
+
+def give_roots_of_unity(N):
+    n = np.arange(N)
+    return np.exp(2.0j*np.pi*n/N)
+
 if __name__=="__main__":
-    N = 1024
-    x = np.linspace(-10, 10, N)
-    sigmaf = 1.0
-    l = 0.0000001
-    sigman = 0.1
+    N = 1024*8
+    x = np.linspace(-100, 100, N)
+    sigmaf = 5.0e0
+    l = 1e1
+    sigman = 1e-4
     theta = np.array([sigmaf, l, sigman])
 
     # get operator representation
@@ -252,36 +252,65 @@ if __name__=="__main__":
     # test matvec
     t = np.random.randn(N)
 
-    print "Starting"
-    res1 = Kop(t)
-    print "Done"
+    # print "Starting"
+    # res1 = Kop(t)
+    # print "Done"
+    #
+    # res2 = Kmat.dot(t)
 
-    res2 = Kmat.dot(t)
+    # print "matvec diff = ", np.abs(res1 - res2).max()
 
-    print "matvec diff = ", np.abs(res1 - res2).max()
-
-    #res1 = np.sort(Kop.idot(t))[::-1]
-    res1 = Kop.idot(t)
-    #res2 = np.sort(np.linalg.solve(Kmat + 1e-13*np.eye(N), t))[::-1]
-    res2 = np.linalg.solve(Kmat + 1e-13 * np.eye(N), t)
+    # res1 = np.sort(Kop.idot(t))[::-1]
+    # res1 = Kop.idot(t)
+    # res2 = np.sort(np.linalg.solve(Kmat + 1e-13*np.eye(N), t))[::-1]
+    # res2 = np.linalg.solve(Kmat + 1e-13*np.eye(N), t)
 
     import matplotlib.pyplot as plt
-    plt.figure('inv')
-    plt.plot(res1, 'bx')
-    plt.plot(res2, 'rx')
-    plt.show()
+    # plt.figure('inv')
+    # plt.plot(res1, 'bx')
+    # plt.plot(res2, 'rx')
+    # plt.show()
+
+    # test pspec eigenspectrum and determinant
+    freqs = (np.linspace(0, 2*np.pi, N)*np.arange(N))**2
+    delx = Kop.K1[1] - Kop.K1[0]
+    omega = (2*np.pi*np.fft.fftfreq(N, delx))**2
+    Lambda = Kop.s
+
+    pspec = Kop.spectral_density(theta, freqs) + 1e-15
+    pspec2 = Kop.spectral_density(theta, omega) + 1e-15
+    eigs = np.sort(Kop.Chat2)[::-1][0:N].real*N/(2*N - 2)
+    eigs2 = np.sort(Kop.Chat2 - theta[-1]**2)[::-1][0:N].real*N/(2*N - 2)
+    pspec3 = Kop.spectral_density(theta, np.sort(np.sqrt(eigs2) + 1e-15))
+    pspec4 = Kop.spectral_density(theta, Lambda) + 1e-15
+
+    # test logdet
+    Ky = Kmat + sigman**2*np.eye(N)
+    s, logdet = np.linalg.slogdet(Ky)
+    logdet *= s
+
+    logdeteigs = np.sum(np.log(eigs))
+
+    logdetRR = RRlogdet(N, sigman, pspec)
+    logdetRR2 = RRlogdet(N, sigman, pspec2)
+    logdetRR3 = RRlogdet(N, sigman, pspec3)
+    logdetRR4 = RRlogdet(N, sigman, pspec4)
+
+    logdetdiag = np.sum(np.log(np.diag(Ky)))
+
+    teff = (x[-1]-x[0])/l
+    seff = sigmaf/l
+    SNR = sigmaf/sigman
+
+    print "logdet = ", logdet, "teff = ", teff, "seff = ", seff, "SNR = ", SNR
+    print "eig logdet = ", logdeteigs, np.abs(logdet - logdeteigs)/np.abs(logdet)
+    print "RR logdet = ", logdetRR, np.abs(logdet - logdetRR)/np.abs(logdet)
+    print "RR2 logdet = ", logdetRR2, np.abs(logdet - logdetRR2) / np.abs(logdet)
+    print "RR3 logdet = ", logdetRR3, np.abs(logdet - logdetRR3) / np.abs(logdet)
+    print "RR4 logdet = ", logdetRR4, np.abs(logdet - logdetRR4) / np.abs(logdet)
+    print "diag logdet = ", logdetdiag, np.abs(logdet - logdetdiag)/np.abs(logdet)
 
 
-    print "idot diff = ", np.abs(res1 - res2).max()
-
-    # test matmat
-    tt = np.random.randn(N, 10)
-
-    res1 = Kop._matmat(tt)
-
-    res2 = Kmat.dot(tt)
-
-    print "matmat diff = ", np.abs(res1 - res2).max()
 
 
 

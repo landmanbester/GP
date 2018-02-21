@@ -13,7 +13,7 @@ from GP.tools import kronecker_tools as kt
 from GP.operators import covariance_ops
 
 class KronToepGP(object):
-    def __init__(self, x, xp, y, theta, Sigmay=None, kernels='sqexp'):
+    def __init__(self, x, xp, y, theta, Sigmay=None, kernels=['sqexp']):
         """
         :param x: an array of arrays holding inputs i.e. x = [[x_1], [x_2], ..., [x_3]] where x_1 in R^{N_1} etc.
         :param xp: an array of arrays holding targets i.e. xp = [[xp_1], [xp_2], ..., [xp_3]] where xp_1 in R^{Np_1} etc.
@@ -54,14 +54,14 @@ class KronToepGP(object):
             Ntheta = theta0.size
             bnds = []
             for i in xrange(Ntheta):
-                bnds.append((1e-6, None))
+                bnds.append((1e-3, 2.0))
             # Set default bounds for hypers (they must be strictly positive)
             bnds = tuple(bnds)
         else:
             bnds = bounds # make sure above criteria on bounds satisfied if passing default bounds
 
         # Do optimisation
-        thetap = opt.fmin_l_bfgs_b(self.logpo.logL, theta0, fprime=None, bounds=bnds, approx_grad=True) #, factr=1e10, pgtol=0.1)
+        thetap = opt.fmin_l_bfgs_b(self.logpo.logL, theta0, fprime=None, bounds=bnds, approx_grad=True, factr=1e12, pgtol=0.1)
 
         theta = thetap[0]
 
@@ -77,15 +77,15 @@ def func(nu, t, sigma):
 
 if __name__ == "__main__":
     # generate some data
-    Nnu = 100
-    numax = 5.0
+    Nnu = 25
+    numax = 2.0
     nu = np.linspace(-numax, numax, Nnu)
-    Nnup = 100
+    Nnup = 25
     nup = np.linspace(-numax, numax, Nnup)
 
-    Nt = 100
+    Nt = 25
     t = np.linspace(-numax, numax, Nt)
-    Ntp = 100
+    Ntp = 25
     tp = np.linspace(-numax, numax, Ntp)
 
     nunu, tt = np.meshgrid(nu, t)
@@ -101,10 +101,10 @@ if __name__ == "__main__":
     fp = func(nunup, ttp, 0.0)
 
     # set hypers
-    sigmaf = 2.12662296
-    l1 = 0.91048988
-    l2 = 0.90298655
-    sigman = 0.10111004
+    sigmaf = 1.0
+    l1 = 1.0
+    l2 = 1.0
+    sigman = 0.5
     theta0 = np.array([sigmaf, l1, l2, sigman])
 
     # create GP object

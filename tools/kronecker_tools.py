@@ -157,6 +157,22 @@ def kron_matmat(A, B):  # double check!!!!!!
         C[:,i] = kron_matvec(A, K[:, i])
     return C
 
+def kron_tensormat(A, B):
+    """
+    Tensor product over non-square Knonecker matrices
+    :param A: an array of arrays holding matrices [..., K3, K2, K1] where Ki is Mi x Gi
+    :param B: the RHS matrix
+    :return: the solution matrix
+    """
+    K = kron_kron(B)  # currently unavoidable
+    M = K.shape[1]  # the product of Np_1 x Np_2 x ... x Np_3
+
+    N = kron_N(A)
+    C = np.zeros([N, M])
+    for i in xrange(M):
+        C[:,i] = kron_tensorvec(A, K[:, i])
+    return C
+
 def kron_toep_matmat(A, B, Ntot, D):  # to test
     """
     Computes the product of two kronecker matrices

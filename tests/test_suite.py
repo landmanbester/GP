@@ -240,7 +240,7 @@ if __name__=="__main__":
     X = np.array([z, x, t])
     sigman = 0.1
     theta0 = np.array([sigmaf, lz, lx, lt, sigman])
-    Kop = covariance_ops.K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], grid_regular=True)
+    Kop = covariance_ops.K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"])
 
     if False:
         test_Kop_matvec(Kop, K, b)
@@ -297,13 +297,14 @@ if __name__=="__main__":
     # test determinant from eigenvalue approximation
     N2 = 256*2*2
     print N2
-    l = 0.1
+    l = 0.01
     theta = np.array([sigmaf, l, sigman])
     x = np.linspace(-1, 1, N2)
     xx = abs_diff.abs_diff(x, x)
-    K = kernel.cov_func(theta, xx, noise=False)
+    K = kernel.cov_func(theta, xx, noise=True)
 
-    Sigmay = sigman**2*(np.ones(N2) + 0.5*np.abs(np.random.randn(N2)))
+    Sigmay = sigman**2*np.ones(N2) #+ 0.5*np.abs(np.random.randn(N2)))
+
     eps = np.mean(Sigmay)
 
     Ky = K + np.diag(Sigmay)
