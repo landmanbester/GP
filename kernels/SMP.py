@@ -25,10 +25,27 @@ class SMP(object):
         """
         A single component of the spectral mixture kernel
         :param theta: array of hyperparameters theta = [w, l, mu]
-        :param s: the fourier dual of the spatial coordinate
+        :param x: diff squares
         :return: 
         """
         return theta[0]**2*np.exp(-2.0*np.pi**2*x**2*theta[1]**2)*np.cos(2.0*np.pi*x*theta[2])
+
+    def dkernel(self, theta, x, K, mode=None):
+        """
+        The derivative of a single kernel component
+        :param theta: 
+        :param x: 
+        :param K: 
+        :return: 
+        """
+        if mode == "sigmaf":
+            return 2 * theta[0] * np.exp(-2 * np.pi ** 2 * theta[1] ** 2 * x ** 2) * np.cos(2 * np.pi * theta[2] * x)
+        elif mode == "l":
+            return -4 * np.pi ** 2 * theta[1] * theta[0] ** 2 * x ** 2 * \
+                   np.exp(-2 * np.pi ** 2 * theta[1] ** 2 * x ** 2) * np.cos(2 * np.pi * theta[2] * x)
+        elif mode == "mu":
+            return -2 * np.pi * theta[0] ** 2 * x * np.exp(-2 * np.pi ** 2 * theta[1] ** 2 * x ** 2) * \
+                   np.sin(2 * np.pi * theta[2] * x)
 
     def kernels(self, thetas, x):
         """

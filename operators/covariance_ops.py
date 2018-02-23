@@ -17,10 +17,13 @@ class K_op(ssl.LinearOperator):
         self.D = x.shape[0]
         self.N = kt.kron_N(x)
         self.x = x
+        # get individual shapes
+        self.Ds = np.zeros(self.D, dtype=np.int8)
         thetan = np.zeros([self.D, 3])
         thetan[:, 0] = theta[0]
         thetan[:, -1] = theta[-1]
         for i in xrange(self.D):  # this is how many length scales will be involved in te problem
+            self.Ds[i] = self.x[i].shape[0]
             thetan[i, 1] = theta[i + 1]  # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
         self.theta = theta
         # set up kernels for each dimension
@@ -29,7 +32,8 @@ class K_op(ssl.LinearOperator):
         self.Lambdas = np.empty(self.D, dtype=object)
         for i, k in enumerate(kernels):
             if k == "sqexp":
-                self.kernels.append(expsq.sqexp_op(x[i], thetan[i]))
+                self.kernels.append(expsq.sqexp_op(x[i], thetan[i], np.prod(np.delete(self.Ds, i)),
+                                    wisdom_file='/home/landman/Projects/GP/fft_wisdom/test.wisdom.npy', reset_wisdom=True))
                 self.Phis[i] = self.kernels[i].Phi
                 self.Lambdas[i] = self.kernels[i].S  # approximate power spectrum
             else:
@@ -161,16 +165,16 @@ class Ky_op(ssl.LinearOperator):
 
 if __name__=="__main__":
     # set inputs
-    Nx = 21
+    Nx = 100
     sigmaf = 1.0
     lx = 0.25
     x = np.linspace(0, 1, Nx)
 
-    Nt = 23
+    Nt = 100
     lt = 0.5
     t = np.linspace(-1, 0, Nt)
 
-    Nz = 25
+    Nz = 100
     lz = 0.35
     z = np.linspace(-2, -1, Nz)
 
@@ -241,12 +245,12 @@ if __name__=="__main__":
     Kyop.update_theta(theta)
 
    # test preconditioner
-    print "Testing inverse 2"
+    print "Testing inverse 3"
     res = Kyop(b)
     import time
     ti = time.time()
     res2 = Kyop.idot(res)
-    print "Time taken 2 = ", time.time() - ti
+    print "Time taken 3 = ", time.time() - ti
     print np.abs(b - res2).max(), np.abs(b - res2).min()
 
     print "Niter = ", Kop.count
