@@ -262,7 +262,7 @@ def give_roots_of_unity(N):
     return np.exp(2.0j*np.pi*n/N)
 
 if __name__=="__main__":
-    N = 2**15
+    N = 2**10
     x = np.linspace(-100, 100, N)
     sigmaf = 5.0e0
     l = 1e1
