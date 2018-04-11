@@ -13,12 +13,13 @@ from GP.tools import FFT_tools as ft
 
 
 class K_op(ssl.LinearOperator):
-    def __init__(self, x, theta, kernels=["sqexp"]):
+    def __init__(self, x, theta, kernels=["sqexp"], precond_mode="Full"):
         self.D = x.shape[0]
         self.N = kt.kron_N(x)
         self.x = x
         # get individual shapes
         self.Ds = np.zeros(self.D, dtype=np.int8)
+        self.precond_mode = precond_mode
         thetan = np.zeros([self.D, 3])
         thetan[:, 0] = theta[0]
         thetan[:, -1] = theta[-1]
@@ -26,6 +27,7 @@ class K_op(ssl.LinearOperator):
             self.Ds[i] = self.x[i].shape[0]
             thetan[i, 1] = theta[i + 1]  # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
         self.theta = theta
+        self.eps = self.theta[-1]**2  # default nugget
         # set up kernels for each dimension
         self.kernels = []
         self.Phis = np.empty(self.D, dtype=object)
@@ -34,10 +36,18 @@ class K_op(ssl.LinearOperator):
             if k == "sqexp":
                 self.kernels.append(expsq.sqexp_op(x[i], thetan[i], np.prod(np.delete(self.Ds, i)),
                                     wisdom_file='/home/landman/Projects/GP/fft_wisdom/test.wisdom.npy', reset_wisdom=True))
-                self.Phis[i] = self.kernels[i].Phi
-                self.Lambdas[i] = self.kernels[i].S  # approximate power spectrum
+                if self.precond_mode == "Full":
+                    self.kernels[i].set_eigs()  # default nugget, reset if it changes
+                    self.Phis[i] = self.kernels[i].Q
+                    self.Lambdas[i] = self.kernels[i].Lambda_full
+                elif self.precond_mode == "RR":
+                    self.kernels[i].set_RR_eigs(nugget=theta[-1] ** 2)
+                    self.Phis[i] = self.kernels[i].Phi
+                    self.Lambdas[i] = self.kernels[i].S  # approximate power spectrum
+                else:
+                    raise Exception("Unsupported precond mode %s" % self.precond_mode)
             else:
-                raise Exception("Unsupported kernel %s"%k)
+                raise Exception("Unsupported kernel %s" % k)
         self.PhisT = kt.kron_transpose(self.Phis)
         self.shape = (self.N, self.N)
         self.dtype = np.float64
@@ -47,12 +57,20 @@ class K_op(ssl.LinearOperator):
         Sets attributes required for preconditioning operator
         :param eps: this is the average noise level i.e. mean(diag(Sigmay)) 
         """
-        for i in xrange(self.D):
-            self.Lambdas[i] = self.kernels[i].S
-        self.Lambdainv = 1.0 / kt.kron_diag(self.Lambdas)
-        self.Sigmainv = 1.0/(np.ones(self.N)*eps)
-        self.count = 0
-        self.Z = np.diag(self.Lambdainv) + kt.kron_tensormat(self.PhisT, self.Phis) / self.theta[-1] ** 2
+        self.eps = eps
+        self.count = 0  # to keep track of number of iters
+        if self.precond_mode == "Full":
+            for i in xrange(self.D):
+                self.kernels[i].set_eigs()
+                self.Lambdas[i] = self.kernels[i].Lambda_full
+
+        else:
+            for i in xrange(self.D):
+                self.Lambdas[i] = self.kernels[i].S
+
+            self.Lambdainv = 1.0 / kt.kron_diag(self.Lambdas)
+            self.Sigmainv = 1.0/(np.ones(self.N)*eps)
+            self.Z = np.diag(self.Lambdainv) + kt.kron_tensormat(self.PhisT, self.Phis) / self.theta[-1] ** 2
 
     def update_theta(self, theta, eps):
         """
@@ -98,6 +116,13 @@ class K_op(ssl.LinearOperator):
         rhs_vec = kt.kron_tensorvec(self.Phis, rhs_vec)
         return Sigmainvx - self.Sigmainv*rhs_vec
 
+    # full rank inverse for preconditioning
+    def idot_full(self, x):
+        self.count += 1
+        x = kt.kron_matvec(self.PhisT, x)
+        x /= (kt.kron_diag(self.Lambdas) + self.eps)
+        return kt.kron_matvec(self.Phis, x)
+
 
 class Ky_op(ssl.LinearOperator):
     def __init__(self, K, Sigmay=None):
@@ -107,7 +132,9 @@ class Ky_op(ssl.LinearOperator):
             # not spherical noise
             self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1]**2*self.diag_noise))
             # get noise average
-            self.eps = np.mean(self.K.theta[-1]**2*Sigmay)
+            # self.eps = np.mean(self.K.theta[-1]**2*Sigmay)
+            # self.eps = (self.K.theta[-1] ** 2 * Sigmay).min()
+            self.eps = (self.K.theta[-1] ** 2 * Sigmay).max()
         else:
             self.diag_noise = np.ones(self.K.N, dtype=np.float64)
             # spherical noise
@@ -120,13 +147,21 @@ class Ky_op(ssl.LinearOperator):
 
         # set preconditioner
         self.K.set_preconds(self.eps)
-        self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot)
+        if self.K.precond_mode == "Full":
+            self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot_full)
+        else:
+            self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot)
 
     def update_theta(self, theta):
-        self.eps = np.mean(theta[-1] ** 2 * self.diag_noise)
+        # self.eps = np.mean(self.K.theta[-1]**2*Sigmay)
+        # self.eps = (self.K.theta[-1] ** 2 * Sigmay).min()
+        self.eps = (self.K.theta[-1] ** 2 * Sigmay).max()
         self.K.update_theta(theta, self.eps)
         self.Sigmay = ssl.aslinearoperator(diags(self.K.theta[-1] ** 2 * self.diag_noise))
-        self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot)
+        if self.K.precond_mode == "Full":
+            self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot_full)
+        else:
+            self.Mop = ssl.LinearOperator((self.K.N, self.K.N), matvec=self.K.idot)
 
     def _matvec(self, x):
         return self.K(x) + self.Sigmay(x)
@@ -164,17 +199,18 @@ class Ky_op(ssl.LinearOperator):
                     return 2 * theta[2] * np.eye(x.shape[0])
 
 if __name__=="__main__":
+    np.random.seed(123)
     # set inputs
-    Nx = 100
+    Nx = 25
     sigmaf = 1.0
     lx = 0.25
     x = np.linspace(0, 1, Nx)
 
-    Nt = 100
+    Nt = 25
     lt = 0.5
     t = np.linspace(-1, 0, Nt)
 
-    Nz = 100
+    Nz = 25
     lz = 0.35
     z = np.linspace(-2, -1, Nz)
 
@@ -192,24 +228,25 @@ if __name__=="__main__":
 
     # instantiate K operator
     print "initialising K"
-    Kop = K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"])
+    Kop = K_op(X, theta0, kernels=["sqexp", "sqexp", "sqexp"], precond_mode="Full")
 
     # set diagonal noise matrix
     print "Setting Sigmay"
-    Sigmay = np.ones(N) + np.abs(0.2 * np.random.randn(N))
+    Sigmay = 0.1*np.ones(N) + np.abs(0.2 * np.random.randn(N))
 
-    # Sigmay[500] = 10
-    # Sigmay[1500] = 0.001
+    Sigmay[500] = 10
+    Sigmay[1500] = 0.001
 
     # instantiate Ky operator
     print "Initialising Ky"
-    Kyop = Ky_op(Kop, Sigmay)
+    Kyop = Ky_op(Kop, Sigmay=Sigmay)
 
     # test preconditioner
-    print "Testing inverse"
+    print "Testing diagonal inverse"
     res = Kyop(b)
     import time
     ti = time.time()
+    #res2 = Kyop.idot(res)
     res2 = Kyop.idot(res)
     print "Time taken = ", time.time() - ti
     print np.abs(b - res2).max(), np.abs(b - res2).min()
@@ -226,7 +263,7 @@ if __name__=="__main__":
     print "Niter = ", Kop.count
 
     # test update theta
-    theta = np.array([1.5*sigmaf, 2*lt, 2*lx, 2*lz, 0.1*sigman])
+    theta = np.array([1.5*sigmaf, 2*lt, 2*lx, 2*lz, sigman])
     Kyop.update_theta(theta)
 
    # test preconditioner

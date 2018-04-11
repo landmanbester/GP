@@ -159,15 +159,7 @@ class sqexp_op(ssl.LinearOperator):
         self.shape = (self.N, self.N)
         self.dtype = np.float64
 
-        # set basis functions required for preconditioning
-        self.M = np.array([7])
-        self.L = np.array([np.maximum(1.75*self.x.max(), 1.05*self.theta[1])])
-        from GP.tools import make_basis
-        from GP.basisfuncs import rectangular
-        self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)  # does not depend on theta
-        self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)  # do not confuse with Lambdas in K operator, no dependence on theta
-        self.s = np.sqrt(self.Lambda)  # does not depend on theta
-        self.S = self.spectral_density(self.theta, self.s)  # this becomes Lambdas in K operator, depends on theta
+        self.has_eig_vecs = False
 
     def _matvec(self, x):
         self.xhat[0:self.N] = x
@@ -183,6 +175,45 @@ class sqexp_op(ssl.LinearOperator):
     #     y = xhat/self.Chat2
     #     return self.iFFT2(y)()[0:self.N].real
 
+    def set_eigs(self, nugget=None):
+        if not self.has_eig_vecs:
+            XX = abs_diff.abs_diff(self.x, self.x)
+            Kmat = self.cov_func(self.theta, XX)
+            self.Lambda_full, self.Q = np.linalg.eigh(Kmat)  # add jitter for stability
+            self.has_eig_vecs = True
+            if (self.Lambda_full < 0.0).any():  # Hermitian matrices have positive eigenvals
+                I = np.argwhere(self.Lambda_full <= 0.0).squeeze()
+                self.Lambda_full[I] = 0.0
+                if nugget is not None:
+                    self.Lambda_full += nugget
+        else:
+            XX = abs_diff.abs_diff(self.x, self.x)
+            Kmat = self.cov_func(self.theta, XX)
+            self.Lambda_full = np.linalg.eigvalsh(Kmat)
+            if (self.Lambda_full < 0.0).any():  # Hermitian matrices have positive eigenvals
+                I = np.argwhere(self.Lambda_full <= 0.0).squeeze()
+                self.Lambda_full[I] = 0.0
+                if nugget is not None:
+                    self.Lambda_full += nugget
+
+    def set_RR_eigs(self, nugget=None):
+        # set basis functions required for preconditioning
+        self.M = np.array([7])
+        self.L = np.array([np.maximum(1.75*self.x.max(), 1.05*self.theta[1])])
+        from GP.tools import make_basis
+        from GP.basisfuncs import rectangular
+        self.Phi = make_basis.get_eigenvectors(self.x, self.M, self.L, rectangular.phi)  # does not depend on theta
+        self.Lambda = make_basis.get_eigenvals(self.M, self.L, rectangular.Lambda)  # do not confuse with Lambdas in K operator, no dependence on theta
+        self.s = np.sqrt(self.Lambda)  # does not depend on theta
+        self.S = self.spectral_density(self.theta, self.s)  # this becomes Lambdas in K operator, depends on theta
+
+
+    def idot_full(self, x):
+        # computes inverse multiply directly using eigen-decomposition
+        x = self.Q.T.dot(x)
+        x /= self.Lambda_full  # diag dot with inverse using vector representation
+        return self.Q.dot(x)
+
     def _matmat(self, x):
         self.Xhat[0:self.N, :] = x
         self.Xhat[self.N::, :] = 0.0
@@ -196,7 +227,8 @@ class sqexp_op(ssl.LinearOperator):
         K1 = self.cov_func(self.theta, self.r)
         self.Chat[:] = np.append(K1, K1[np.arange(self.N)[1:-1][::-1]].conj())
         self.FFTC()
-        self.S = self.spectral_density(self.theta, self.s)
+
+        # self.S = self.spectral_density(self.theta, self.s)
 
     def cov_func(self, theta, x):
         """
@@ -262,11 +294,11 @@ def give_roots_of_unity(N):
     return np.exp(2.0j*np.pi*n/N)
 
 if __name__=="__main__":
-    N = 2**10
+    N = 2**8
     x = np.linspace(-100, 100, N)
-    sigmaf = 5.0e0
-    l = 1e1
-    sigman = 1e-4
+    sigmaf = 1.0e0
+    l = 5e0
+    sigman = 1e-2
     theta = np.array([sigmaf, l, sigman])
 
     # get operator representation
@@ -276,6 +308,7 @@ if __name__=="__main__":
     kernel = sqexp()
     xx = abs_diff.abs_diff(x, x)
     Kmat = kernel.cov_func(theta, xx, noise=False)
+    Kfunc = kernel.cov_func(theta, xx[0,1::], noise=False)
 
     # test matvec
     t = np.random.randn(N)
@@ -309,6 +342,27 @@ if __name__=="__main__":
     res2 = Kmat.dot(T2)
 
     print "matmat diff = ", np.abs(res1 - res2).max()
+
+    # testing full inverse
+    nugget = 1e-3
+    Kop.set_eigs(nugget=nugget)
+    res1 = (Kmat + nugget*np.eye(N)).dot(t)
+    tres = Kop.idot_full(res1)
+
+    print "idot diff", np.abs(t - tres).max()
+
+    # # set up general purpose 1D FFT schemes
+    # x = pyfftw.empty_aligned(N, dtype='complex128')
+    # x2 = pyfftw.empty_aligned(N, dtype='complex128')
+    # xhat = pyfftw.empty_aligned(N, dtype='complex128')
+    # # forward transform
+    # FFT = pyfftw.FFTW(x, xhat, direction='FFTW_FORWARD', threads=4)
+    # iFFT = pyfftw.FFTW(xhat, x2, direction='FFTW_BACKWARD', threads=4)
+    # x[:] = t + 1.0j*t
+    # FFT()
+    # iFFT()
+    #
+    # print np.abs(x-x2).max()
 
     # res1 = np.sort(Kop.idot(t))[::-1]
     # res1 = Kop.idot(t)
