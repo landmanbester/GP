@@ -31,7 +31,7 @@ def draw_spatio_temporal_samples(meanf, x, t, theta_x, theta_t, Nsamps):
         samps[i] = meanf + kt.kron_matvec(L, xi).reshape(Nt, Nx)
     return samps
 
-def draw_samples_ND_grid(x, theta, Nsamps, meanf=None):
+def draw_samples_ND_grid(x, theta, Nsamps, meanf=None, dtype=np.complex128):
     """
     Draw N dimensional samples on a Euclidean grid
     :param meanf: mean function
@@ -49,17 +49,16 @@ def draw_samples_ND_grid(x, theta, Nsamps, meanf=None):
     for i in xrange(D):
         Ns.append(x[i].size)
         XX = abs_diff.abs_diff(x[i], x[i])
-        print Ns[i], theta[i], K[i]
         K[i] = Kcov.cov_func(theta[i], XX, noise=False) + 1e-13*np.eye(Ns[i])
         Ntot *= Ns[i]
 
     L = kt.kron_cholesky(K)
-    samps = np.zeros([Nsamps]+Ns, dtype=np.float64)
+    samps = np.zeros([Nsamps]+Ns, dtype=dtype)
     for i in xrange(Nsamps):
-        xi = np.random.randn(Ntot)
+        xi = np.random.randn(Ntot) + 1.0j * np.random.randn(Ntot)
         if meanf is not None:
             samps[i] = meanf(x) + kt.kron_matvec(L, xi).reshape(Ns)
         else:
             samps[i] = kt.kron_matvec(L, xi).reshape(Ns)
-    return samps
+    return samps, K
 

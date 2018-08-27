@@ -7,7 +7,6 @@ from GP.tools import draw_samples
 if __name__=="__main__":
     Nt = 5
     t = np.linspace(0, 1, Nt)
-
     Nnu = 5
     nu = np.linspace(0, 1, Nnu)
 

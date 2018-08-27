@@ -4,7 +4,7 @@ Some tools to exploit fast matrix vector products using the FFT. Inputs need to 
 """
 
 import numpy as np
-import nifty2go as ift
+#import nifty2go as ift
 import pyfftw
 
 def FFT_circvec(c, x):
