@@ -63,3 +63,54 @@ def draw_samples_ND_grid(x, theta, Nsamps, meanf=None):
             samps[i] = kt.kron_matvec(L, xi).reshape(Ns)
     return samps
 
+
+def draw_time_freq_gain_samps(t, nu, St_func, Snu_func, Nsamps):
+    # get time grid
+    Nt = t.size
+    t = np.sort(t)
+    delt = t[1]-t[0]
+    assert np.allclose(t[1::]-t[0:-1], delt)
+    # get frequency grid
+    Nnu = nu.size
+    nu = np.sort(nu)
+    delnu = nu[1] - nu[0]
+    assert np.allclose(nu[1::] - nu[0:-1], delnu)
+    # get time freqs and evaluate spectra
+    Ntfreq = 2*Nt-2
+    st = np.fft.fftfreq(Ntfreq, delt)
+    St = St_func(st)
+    # import matplotlib.pyplot as plt
+    # plt.plot(st, St)
+    # plt.show()
+    # get nu freqs and evaluate spectra
+    Nnufreq = 2*Nnu-2
+    snu = np.fft.fftfreq(Nnufreq, delnu)
+    Snu = Snu_func(snu)
+    # plt.plot(snu, Snu)
+    # plt.show()
+
+    samps = np.zeros((Nsamps, Nt, Nnu), dtype=np.float64)
+    Ntot = Ntfreq * Nnufreq
+    for i in xrange(Nsamps):
+        # draw random vector to generate sample
+        xi = np.random.randn(Ntot)
+
+        # use kronecker product trick to perform matvec
+        # first for t axis
+        Xi = np.reshape(xi, (Ntfreq, Nnufreq))  # reshape into matrix
+        y = np.zeros((Ntfreq, Nnufreq), dtype=np.float64)  # tmp storage
+        # get matrix vector product with each column
+        for k in xrange(Nnufreq):
+            xk = np.fft.fft(Xi[:, k])
+            y[:, k] = np.fft.ifft(np.sqrt(St) * xk).real
+        xi = y.T.flatten()
+
+        # next for nu axis
+        Xi = np.reshape(xi, (Nnufreq, Ntfreq))  # reshape into matrix
+        y = np.zeros((Nnufreq, Ntfreq), dtype=np.float64)  # tmp storage
+        # get matrix vector product with each column
+        for k in xrange(Ntfreq):
+            xk = np.fft.fft(Xi[:, k])
+            y[:, k] = np.fft.ifft(np.sqrt(Snu) * xk).real
+        samps[i] = y.T[0:Nt, 0:Nnu]
+    return samps
