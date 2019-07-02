@@ -145,9 +145,10 @@ class evidence(object):
             D = self.XX.shape[0]
             # broadcast theta (sigmaf and sigman is a shared hyperparameter but easiest to deal with this way)
             thetan = np.zeros([D, 3])
-            thetan[:, 0] = theta[0]
+            thetan[0, 0] = theta[0]
+            thetan[1::, 0] = 1.0
             thetan[:, -1] = theta[-1]
-            for i in xrange(D): # this is how many length scales will be involved in te problem
+            for i in xrange(D): # this is how many length scales will be involved in the problem
                 thetan[i, 1] = theta[i+1] # assuming we set up the theta vector as [[sigmaf, l_1, sigman], [sigmaf, l_2, ..., sigman]]
             # get the Kronecker matrices
             K = []
@@ -158,20 +159,20 @@ class evidence(object):
             Lambdas, Qs = kt.kron_eig(K)
             QsT = kt.kron_transpose(Qs)
             # get alpha vector
-            alpha = kt.kron_matvec(QsT[::-1], self.yDat)
+            alpha = kt.kron_matvec(QsT, self.yDat)
             Lambda = kt.kron_diag(Lambdas)
             if self.Sigmay is not None:
                 Lambda += theta[-1]**2*kt.kron_diag(self.Sigmay)  # absorb weights into Lambdas
             else:
                 Lambda += theta[-1] ** 2 * np.ones(self.N)
             alpha = alpha / Lambda  # same as matrix product with inverse of diagonal
-            alpha = kt.kron_matvec(Qs[::-1], alpha)
+            alpha = kt.kron_matvec(Qs, alpha)
             # get negative log marginal likelihood
             logp = 0.5*(self.yDat.T.dot(alpha) + np.sum(np.log(Lambda)) + self.N*np.log(2.0*np.pi))
             # get derivatives
             dKdtheta = []
             # first w.r.t. sigmaf which only needs to be done once and will have same shape as K
-            dKdtheta.append(self.kernel[0].dcov_func(thetan[0], self.XX, K, mode='sigmaf')) # doesn't matter which theta/kernel we pass because we have already evaluated K
+            dKdtheta.append(self.kernel[0].dcov_func(thetan[0], self.XX, K, mode='sigmaf')) # need to pass theta for kernel 0 since that has sigmaf
             # now get w.r.t. length scales
             for i in xrange(D): # one length scale for each dimension
                 dKdtheta.append(self.kernel[i].dcov_func(thetan[i], self.XX[i], K[i], mode='l')) # here it does matter, will be of shape K[i]
@@ -188,7 +189,7 @@ class evidence(object):
                 gamma.append(np.einsum('ij,ji->i', Qs[i].T, tmp))
             gamma = np.asarray(gamma)
             gamma = kt.kron_diag(gamma)
-            kappa = kt.kron_matvec(dKdtheta[0][::-1], alpha)
+            kappa = kt.kron_matvec(dKdtheta[0], alpha)
             dlogp[0] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
             # now get it for the length scales
             for i in xrange(1, D+1): # i labels length scales
@@ -204,7 +205,7 @@ class evidence(object):
                 gamma = kt.kron_diag(gamma) # exploiting diagonal property of Kronecker product
                 dKdtheta_tmp = K.copy()
                 dKdtheta_tmp[i-1] = dKdtheta[i]  # can be made more efficient, just set for clarity
-                kappa = kt.kron_matvec(dKdtheta_tmp[::-1], alpha)
+                kappa = kt.kron_matvec(dKdtheta_tmp, alpha)
                 dlogp[i] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
 
             # finally get it for sigman
@@ -216,8 +217,11 @@ class evidence(object):
             gamma = kt.kron_diag(gamma)
             kappa = kt.kron_diag(dKdtheta[-1])*alpha
             dlogp[-1] = -self.get_dZdthetai(alpha, kappa, Lambda, gamma)
-            #print theta, logp, dlogp
-            #print self.get_full_derivs(K, dKdtheta, alpha, theta[-1]**2*np.eye(self.N), self.yDat)
+            # logp2, dlogp2 = self.get_full_derivs(K, dKdtheta, alpha, theta[-1]**2*np.eye(self.N), self.yDat)
+            # print logp, logp2
+            # print dlogp
+            # print dlogp2
+            
             return logp, dlogp
         else:
             raise Exception('Mode %s not supported yet' % self.mode)
@@ -252,7 +256,7 @@ class evidence(object):
         dKdthetafull = kt.kron_diag_diag(dKdthetafull)
         dlogp[-1] = 0.5 * np.trace(np.linalg.solve(Kyfull, dKdthetafull)) - 0.5 * alpha.dot(dKdthetafull.dot(alpha))
 
-        return logp, dlogp
+        return logp.squeeze(), dlogp.squeeze()
 
 
 class evidence_op(object):

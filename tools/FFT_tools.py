@@ -5,8 +5,11 @@ Some tools to exploit fast matrix vector products using the FFT. Inputs need to 
 
 import numpy as np
 import nifty2go as ift
-import pyfftw
-
+try:
+    import pyfftw
+except:
+    pass
+    
 def FFT_circvec(c, x):
     """
     Computes matrix vector product y = Cx where C = circulant(c) in NlogN time

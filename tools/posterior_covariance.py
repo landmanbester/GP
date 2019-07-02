@@ -50,13 +50,14 @@ class covf(object):
         elif self.mode == "RR":
             coeffs = self.give_RR_covcoeffs(theta)
             return np.dot(self.Phip, np.dot(coeffs, self.Phip.T))
-        elif self.mode == "Kron":
+        elif self.mode == "kron":
             # get the Kronecker matrices
             D = self.XX.shape[0]
             Kp = []
             Kpp = []
             K = []
             for i in xrange(D):
+                print theta
                 Kp.append(self.kernel[0].cov_func(theta[i], self.XXp[i], noise=False))
                 Kpp.append(self.kernel[0].cov_func(theta[i], self.XXpp[i], noise=False))
                 K.append(self.kernel[0].cov_func(theta[i], self.XX[i], noise=False))

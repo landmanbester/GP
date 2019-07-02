@@ -8,7 +8,10 @@ from scipy.sparse import linalg as ssl
 from scipy.sparse import diags
 from GP.tools import kronecker_tools as kt
 from GP.tools import FFT_tools as ft
-import pyfftw
+try:
+    import pyfftw
+except:
+    pass
 
 class sqexp(object):
     def __init__(self, p=None, D=1, Sigmay=None, mode=None):
